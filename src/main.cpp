@@ -289,7 +289,63 @@ void Measuring(void *parameter) {
   }
 }
 
+void BluetoothListen(void *parameter)
+{
+  Serial.println("Inside Bluetooth task.");
+  for (;;)
+  {
+    if (SerialBT.available()){
+      char incomingChar = SerialBT.read();
+      if (incomingChar != '\n'){
+        message += String(incomingChar);
+      }
+      else{
+        message = "";
+      }
+      Serial.println("Received message:" + message);
+    
+      // Check if the command is to request a file
+      if (message == "1") {
+        Serial.println("Sending measurements.txt");
+        sendFileOverBluetooth("/measurements.txt");
+        //sendFileOverBluetooth(SD, "/foo.txt");
+        delay(10);
+        listDir(SD, "/", 0);
+        message = "";
+      }
+      else if (message == "2") {
+        Serial.println("Sending log.txt");
+        sendFileOverBluetooth("/log.txt");
+        delay(10);
+        listDir(SD, "/", 0);
+        message = "";
+      }
+      else if (message == "3") {
+        size_t freeHeapBefore = esp_get_free_heap_size();
+        Serial.println("Free heap before sending file: " + String(freeHeapBefore) + " bytes");
 
+        sendFileOverBluetoothInOneGo("/log.txt");
+
+        size_t freeHeapAfter = esp_get_free_heap_size();
+        Serial.println("Free heap after sending file: " + String(freeHeapAfter) + " bytes");
+
+        if (freeHeapAfter >= freeHeapBefore) {
+            Serial.println("No memory leak detected");
+        } else {
+            Serial.println("Potential memory leak detected: " + String(freeHeapBefore - freeHeapAfter) + " bytes");
+        }
+      }
+      else if (message == "4") {
+        Serial.println("Sending log.txt");
+        sendFileOverBluetoothInOneGo2("/log.txt");
+        delay(10);
+        listDir(SD, "/", 0);
+        message = "";
+      }
+  }
+  vTaskDelay(100 / portTICK_PERIOD_MS);
+  }
+}
 void DisplayMeasurements(void *parameter)
 {
   Serial.println("Inside Measuring task.");
@@ -336,7 +392,7 @@ void DisplayMeasurements(void *parameter)
     vTaskDelay(500 / portTICK_PERIOD_MS);
   }
   }
-TaskHandle_t Task1, Task2, Task3 = NULL;
+TaskHandle_t Task1, Task2, Task3, Task4 = NULL;
 
 String createPayload(long timestamp, float temperature, float phValue, float AcsValueF, float Volt, float DS18B20_1, float DS18B20_2, float DS18B20_3, float humidity, float ecValue, float flowRate) 
                     {
@@ -620,6 +676,7 @@ void setup() {
   xTaskCreatePinnedToCore(sendArray,              "Send Array",     4096,               NULL,   1,     &Task2,  0); // 20000 10000
   vTaskDelay(1000 / portTICK_PERIOD_MS); 
   xTaskCreatePinnedToCore(DisplayMeasurements,   "Display Measurements",      4096,      NULL,   0,     &Task3,  0); // Core: 1
+  xTaskCreatePinnedToCore(BluetoothListen,       "Listen to Bluetooth",       4096,      NULL,   0,     &Task4,  0); // Core: 1
   //xTaskCreatePinnedToCore(post,   "Post HTTP",      4096,      NULL,   1,     &Task1,  0); // Core: 1
   //vTaskDelay(1000 / portTICK_PERIOD_MS);//pcName,  usStackDepth, pvParameters, uxPriority,   pvCreatedTask,  xCoreID 
 }
@@ -665,49 +722,7 @@ void loop() {
            post2();        
         }
         //readGsmResponse();
-    }
-    
-  if (SerialBT.available()){
-      char incomingChar = SerialBT.read();
-      if (incomingChar != '\n'){
-        message += String(incomingChar);
-      }
-      else{
-        message = "";
-      }
-      Serial.println("Received message:" + message);
-    
-      // Check if the command is to request a file
-      if (message == "1") {
-        Serial.println("Sending measurements.txt");
-        sendFileOverBluetooth("/measurements.txt");
-        //sendFileOverBluetooth(SD, "/foo.txt");
-        delay(10);
-        listDir(SD, "/", 0);
-        message = "";
-      }
-      else if (message == "2") {
-        Serial.println("Sending log.txt");
-        sendFileOverBluetooth("/log.txt");
-        delay(10);
-        listDir(SD, "/", 0);
-        message = "";
-      }
-      else if (message == "3") {
-        Serial.println("Sending log.txt");
-        sendFileOverBluetoothInOneGo("/log.txt");
-        delay(10);
-        listDir(SD, "/", 0);
-        message = "";
-      }
-      else if (message == "4") {
-        Serial.println("Sending log.txt");
-        sendFileOverBluetoothInOneGo2("/log.txt");
-        delay(10);
-        listDir(SD, "/", 0);
-        message = "";
-      }
-  }
+    }  
     vTaskDelay(100 / portTICK_PERIOD_MS); // Small delay to avoid overwhelming the loop    
 }
 /*

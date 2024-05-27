@@ -554,37 +554,35 @@ void readFileAndSendOverBluetooth(fs::FS &fs, const char *path) {
 void sendFileOverBluetoothInOneGo(const char* path) {
     File file = SD.open(path, FILE_READ);
     if (!file) {
-        Serial.println("Failed to open file for reading");
+        Serial.println("Failed to open file for reading: " + String(path));
         return;
     }
 
-    // Get the file size
-    size_t fileSize = file.size();
+    const size_t chunkSize = 512; // Adjust this value as needed
+    uint8_t buffer[chunkSize];
 
-    // Create a buffer to hold the file contents
-    uint8_t* buffer = (uint8_t*)malloc(fileSize);
-    if (!buffer) {
-        Serial.println("Failed to allocate buffer");
-        file.close();
-        return;
+    while (file.available()) {
+        size_t bytesRead = file.read(buffer, chunkSize);
+        if (bytesRead > 0) {
+            size_t bytesSent = SerialBT.write(buffer, bytesRead);
+            if (bytesSent != bytesRead) {
+                Serial.println("Failed to send file chunk over Bluetooth: " + String(path) + ", bytesSent: " + String(bytesSent) + ", bytesRead: " + String(bytesRead));
+                file.close();
+                return;
+            }
+        } else {
+            Serial.println("Failed to read file chunk: " + String(path));
+            file.close();
+            return;
+        }
     }
 
-    // Read the entire file into the buffer
-    size_t bytesRead = file.read(buffer, fileSize);
     file.close();
-
-    if (bytesRead != fileSize) {
-        Serial.println("Failed to read entire file");
-        free(buffer);
-        return;
-    }
-
-    // Send the buffer over Bluetooth
-    SerialBT.write(buffer, fileSize);
-    free(buffer);
-
-    Serial.println("File sent over Bluetooth");
+    Serial.println("File sent over Bluetooth: " + String(path));
 }
+
+
+
 
 void sendFileOverBluetoothInOneGo2(const char* path) {
     File file = SD.open(path, FILE_READ);
