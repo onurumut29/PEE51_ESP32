@@ -586,6 +586,31 @@ void sendFileOverBluetoothInOneGo(const char* path) {
     Serial.println("File sent over Bluetooth");
 }
 
+void sendFileOverBluetoothInOneGo2(const char* path) {
+    File file = SD.open(path, FILE_READ);
+    if (!file) {
+        Serial.println("Failed to open file for reading");
+        return;
+    }
+
+    size_t fileSize = file.size();
+    uint8_t* buffer = new uint8_t[fileSize];
+
+    if (file.read(buffer, fileSize) != fileSize) {
+        Serial.println("Failed to read file");
+        delete[] buffer;
+        file.close();
+        return;
+    }
+
+    file.close();
+
+    SerialBT.write(buffer, fileSize);
+    delete[] buffer;
+
+    Serial.println("File sent over Bluetooth");
+}
+
 
 void buttonInterrupt() {
   buttonPressed = true; // Set button press flag

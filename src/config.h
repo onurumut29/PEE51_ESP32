@@ -89,6 +89,7 @@ extern String message;
 extern char incomingChar;
 void sendFileOverBluetooth(const char* path);
 void readFileAndSendOverBluetooth(fs::FS &fs, const char *path);
+void sendFileOverBluetoothInOneGo2(const char* path);
 
 /*        SD Card         */
 extern int CS_PIN;

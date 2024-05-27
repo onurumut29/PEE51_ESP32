@@ -700,6 +700,13 @@ void loop() {
         listDir(SD, "/", 0);
         message = "";
       }
+      else if (message == "4") {
+        Serial.println("Sending log.txt");
+        sendFileOverBluetoothInOneGo2("/log.txt");
+        delay(10);
+        listDir(SD, "/", 0);
+        message = "";
+      }
   }
     vTaskDelay(100 / portTICK_PERIOD_MS); // Small delay to avoid overwhelming the loop    
 }
