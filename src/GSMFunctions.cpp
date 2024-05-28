@@ -240,6 +240,9 @@ time_t convertToUnixTimestamp(String date, String time) {
   // Convert to time_t (UNIX timestamp)
   time_t timestamp = mktime(&t);
   Serial.println("Timestamp created in convertToUnixTimestamp: " + String(timestamp));
+  struct timeval tv = { timestamp, 0 };
+  settimeofday(&tv, NULL);
+
   return timestamp;
 }
 

@@ -3,6 +3,9 @@
 #include <EEPROM.h>
 #include "config.h"
 #include <driver/adc.h>
+/*      Save Time     */
+#include <Preferences.h>
+Preferences rtcPrefs;
 
 /*      GSM Module Setup     */
 HardwareSerial gsmSerial(2); // Use UART2
@@ -200,8 +203,9 @@ void Measuring(void *parameter) {
     int bufferIndex;
     if (currentMeasurementIndex == longMeasurement) {
     TickType_t startTime = xTaskGetTickCount();          
-      long ts = convertToUnixTimestamp(date, time_gsm);
-      bufferIndex = snprintf(buffer, bufferSize, "{\"ts\": %ld, \"values\": {", ts);
+      //long ts = convertToUnixTimestamp(date, time_gsm);
+      time_t now = time(NULL);
+      bufferIndex = snprintf(buffer, bufferSize, "{\"ts\": %ld, \"values\": {", now);
 
       bufferIndex += snprintf(buffer + bufferIndex, bufferSize - bufferIndex, "\"Temperatuur_gas\": [");
       for (int i = 0; i < longMeasurement; i++) {
@@ -628,10 +632,30 @@ void setup() {
   vTaskDelay(100 / portTICK_PERIOD_MS); 
   gsmSerial.println("AT&W");
   vTaskDelay(100 / portTICK_PERIOD_MS);
-  gsmSerial.println("AT&V");
-  vTaskDelay(100 / portTICK_PERIOD_MS);
+  //gsmSerial.println("AT&V");
+  //vTaskDelay(100 / portTICK_PERIOD_MS);
   getTime();
   vTaskDelay(100 / portTICK_PERIOD_MS);
+  /*        Save obtained time   */
+  rtcPrefs.begin("rtc", false); // Open the RTC preferences namespace
+    time_t savedTimestamp = rtcPrefs.getUInt("timestamp", 0); // Retrieve the saved timestamp, or 0 if none
+
+    if (savedTimestamp != 0) {
+        // Set the local time using the saved timestamp
+        struct timeval tv = { savedTimestamp, 0 };
+        settimeofday(&tv, NULL);
+    } else {
+        // Obtain the time from the SIM800L and set the local time
+        getTime();
+        time_t unixTimestamp = convertToUnixTimestamp(date, time_gsm);
+        struct timeval tv = { unixTimestamp, 0 };
+        settimeofday(&tv, NULL);
+
+        // Save the timestamp to the RTC memory
+        rtcPrefs.getUInt("timestamp", unixTimestamp);
+    }
+  vTaskDelay(100 / portTICK_PERIOD_MS);
+
   gsmSerial.println("AT"); // Optional: Send an initial AT command to check if the GSM module is responsive
   initialize_gsm();
   vTaskDelay(100 / portTICK_PERIOD_MS);

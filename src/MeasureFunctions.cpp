@@ -558,28 +558,31 @@ void sendFileOverBluetoothInOneGo(const char* path) {
         return;
     }
 
-    const size_t chunkSize = 512; // Adjust this value as needed
-    uint8_t buffer[chunkSize];
+    size_t fileSize = file.size();
+    uint8_t* buffer = new uint8_t[fileSize];
 
-    while (file.available()) {
-        size_t bytesRead = file.read(buffer, chunkSize);
-        if (bytesRead > 0) {
-            size_t bytesSent = SerialBT.write(buffer, bytesRead);
-            if (bytesSent != bytesRead) {
-                Serial.println("Failed to send file chunk over Bluetooth: " + String(path) + ", bytesSent: " + String(bytesSent) + ", bytesRead: " + String(bytesRead));
-                file.close();
-                return;
-            }
-        } else {
-            Serial.println("Failed to read file chunk: " + String(path));
-            file.close();
-            return;
-        }
+    if (buffer == nullptr) {
+        Serial.println("Failed to allocate memory for buffer");
+        file.close();
+        return;
+    }
+
+    size_t bytesRead = file.read(buffer, fileSize);
+    if (bytesRead != fileSize) {
+        Serial.println("Failed to read file: " + String(path) + ", bytesRead: " + String(bytesRead) + ", fileSize: " + String(fileSize));
+        delete[] buffer;
+        file.close();
+        return;
     }
 
     file.close();
+
+    SerialBT.write(buffer, fileSize);
+    delete[] buffer;
+
     Serial.println("File sent over Bluetooth: " + String(path));
 }
+
 
 
 
