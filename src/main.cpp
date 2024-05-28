@@ -57,7 +57,7 @@ char incomingChar;
 
 /*      SD card                         */
 int CS_PIN = 5;
-
+SemaphoreHandle_t fileMutex = NULL; //Handler for the log.txt file
 /*      Switch screen                   */
 int buttonbigOled = 13; // Pin connected to the button
 int buttonsmallOled = 14;
@@ -110,8 +110,14 @@ void sendArray(void *parameter)
       if (uxQueueMessagesWaiting(measurementQueue) > 0) {
         // Receive measurement from the queue
         if (xQueueReceive(measurementQueue, &measurement, portMAX_DELAY) == pdPASS) {
-          TickType_t startTime = xTaskGetTickCount();          
-          logMeasurement(buffer); //vandaag was payload (26/05)
+          TickType_t startTime = xTaskGetTickCount();    
+          if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(3000)) == pdTRUE) {      
+          logMeasurement(buffer); 
+          xSemaphoreGive(fileMutex);
+          }
+          else {
+            Serial.println("sendArrayTask: Could not take fileMutex");
+          }
           Serial.println("Message received in sendArray task: " + String(buffer));
           post_http(buffer);                
           TickType_t endTime = xTaskGetTickCount();
@@ -293,63 +299,62 @@ void Measuring(void *parameter) {
   }
 }
 
-void BluetoothListen(void *parameter)
-{
-  Serial.println("Inside Bluetooth task.");
-  for (;;)
-  {
-    if (SerialBT.available()){
-      char incomingChar = SerialBT.read();
-      if (incomingChar != '\n'){
-        message += String(incomingChar);
-      }
-      else{
-        message = "";
-      }
-      Serial.println("Received message:" + message);
-    
-      // Check if the command is to request a file
-      if (message == "1") {
-        Serial.println("Sending measurements.txt");
-        sendFileOverBluetooth("/measurements.txt");
-        //sendFileOverBluetooth(SD, "/foo.txt");
-        delay(10);
-        listDir(SD, "/", 0);
-        message = "";
-      }
-      else if (message == "2") {
-        Serial.println("Sending log.txt");
-        sendFileOverBluetooth("/log.txt");
-        delay(10);
-        listDir(SD, "/", 0);
-        message = "";
-      }
-      else if (message == "3") {
-        size_t freeHeapBefore = esp_get_free_heap_size();
-        Serial.println("Free heap before sending file: " + String(freeHeapBefore) + " bytes");
+void BluetoothListen(void *parameter) {
+    Serial.println("Inside Bluetooth task.");
+    for (;;) {
+        if (SerialBT.available()) {
+            char incomingChar = SerialBT.read();
+            if (incomingChar != '\n') {
+                message += String(incomingChar);
+            } else {
+                message = "";
+            }
+            Serial.println("Received message:" + message);
 
-        sendFileOverBluetoothInOneGo("/log.txt");
+            // Check if the command is to request a file
+            if (message == "1" || message == "2" || message == "3" || message == "4") {
+                // Acquire the mutex before accessing the file
+                if (xSemaphoreTake(fileMutex, portMAX_DELAY) == pdTRUE) {
+                    // File operations go here
+                    if (message == "1") {
+                        Serial.println("Sending measurements.txt");
+                        sendFileOverBluetooth("/measurements.txt");
+                        // ... (other file operations)
+                    } else if (message == "2") {
+                        Serial.println("Sending log.txt");
+                        sendFileOverBluetooth("/log.txt");
+                        // ... (other file operations)
+                    } else if (message == "3") {
+                        size_t freeHeapBefore = esp_get_free_heap_size();
+                        Serial.println("Free heap before sending file: " + String(freeHeapBefore) + " bytes");
 
-        size_t freeHeapAfter = esp_get_free_heap_size();
-        Serial.println("Free heap after sending file: " + String(freeHeapAfter) + " bytes");
+                        sendFileOverBluetoothInOneGo("/log.txt");
 
-        if (freeHeapAfter >= freeHeapBefore) {
-            Serial.println("No memory leak detected");
-        } else {
-            Serial.println("Potential memory leak detected: " + String(freeHeapBefore - freeHeapAfter) + " bytes");
+                        size_t freeHeapAfter = esp_get_free_heap_size();
+                        Serial.println("Free heap after sending file: " + String(freeHeapAfter) + " bytes");
+
+                        if (freeHeapAfter >= freeHeapBefore) {
+                            Serial.println("No memory leak detected");
+                        } else {
+                            Serial.println("Potential memory leak detected: " + String(freeHeapBefore - freeHeapAfter) + " bytes");
+                        }
+                    } else if (message == "4") {
+                        Serial.println("Sending log.txt");
+                        sendFileOverBluetoothInOneGo2("/log.txt");
+                        // ... (other file operations)
+                    }
+
+                    // Release the mutex after the file operations are complete
+                    xSemaphoreGive(fileMutex);
+                } else {
+                    Serial.println("Failed to acquire file mutex");
+                }
+            }
         }
-      }
-      else if (message == "4") {
-        Serial.println("Sending log.txt");
-        sendFileOverBluetoothInOneGo2("/log.txt");
-        delay(10);
-        listDir(SD, "/", 0);
-        message = "";
-      }
-  }
-  vTaskDelay(100 / portTICK_PERIOD_MS);
-  }
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
 }
+
 void DisplayMeasurements(void *parameter)
 {
   Serial.println("Inside Measuring task.");
@@ -692,6 +697,11 @@ void setup() {
   if (measurementQueue == NULL) {
     Serial.println("Failed to create queue.");
   }
+  fileMutex = xSemaphoreCreateMutex();
+    if (fileMutex == NULL) {
+        Serial.println("Failed to create file mutex");
+        // Handle the error appropriately
+    }
   vTaskDelay(100 / portTICK_PERIOD_MS); 
   esp_err_t esp_wifi_stop(); 
 
@@ -749,251 +759,3 @@ void loop() {
     }  
     vTaskDelay(100 / portTICK_PERIOD_MS); // Small delay to avoid overwhelming the loop    
 }
-/*
-Backup Storing task
-void storeMeasurement() {
-  AllDS18B20Sensors();  
-  temperature = dht_sensor.readTemperature();
-  phValue = pH();
-  AcsValueF = CurrentSensor();
-  Volt = 27.22; // Placeholder for voltage
-  DS18B20_1 = DS18B20_1;
-  DS18B20_2 = DS18B20_2;
-  DS18B20_3 = DS18B20_3;
-  humidity = dht_sensor.readHumidity();
-  ecValue = Cond();
-  flowRate = readFlowsensor();
-
-  //measurements[currentMeasurementIndex].timestamp = convertToUnixTimestamp(date, time_gsm); 
-  Measurement measurement;
-  if (isnan(phValue)      || isinf(phValue)) phValue          = 0;
-  measurements[currentMeasurementIndex].phValue               = phValue;
-  if (isnan(AcsValueF)    || isinf(AcsValueF)) AcsValueF      = 0;
-  measurements[currentMeasurementIndex].AcsValueF             = AcsValueF;
-  if (isnan(Volt)         || isinf(Volt)) Volt                = 0;
-  measurements[currentMeasurementIndex].Volt                  = 27.22; // Placeholder for voltage
-  if (isnan(DS18B20_1)    || isinf(DS18B20_1)) DS18B20_1      = 0;
-  measurements[currentMeasurementIndex].DS18B20_1             = DS18B20_1;
-  if (isnan(DS18B20_2)    || isinf(DS18B20_2)) DS18B20_2      = 0;
-  measurements[currentMeasurementIndex].DS18B20_2             = DS18B20_2;
-  if (isnan(DS18B20_3)    || isinf(DS18B20_3)) DS18B20_3      = 0;
-  measurements[currentMeasurementIndex].DS18B20_3             = DS18B20_3;
-  if (isnan(humidity)     || isinf(humidity)) humidity        = 0;
-  measurements[currentMeasurementIndex].humidity              = humidity;
-  if (isnan(ecValue)      || isinf(ecValue)) ecValue          = 0;
-  measurements[currentMeasurementIndex].ecValue               = ecValue;
-  if (isnan(flowRate)     || isinf(flowRate)) flowRate        = 0;
-  measurements[currentMeasurementIndex].flowRate              = flowRate;
-      
-  currentMeasurementIndex++;
-  if (currentMeasurementIndex == numMeasurements) {
-    
-    // Initialize a new payload structure
-    payload = "{\"ts\": " + String(timestamp)  + ", \"values\": {"; //String(measurements[0].timestamp)
-    // Collect arrays of values for each sensor type
-    String temperatuurGasValues = "\"Temperatuur_gas\": [";
-    String zuurtegradenValues = "\"Zuurtegraad\": [";
-    String stroomValues = "\"Stroom\": [";
-    String spanningValues = "\"Spanning\": [";
-    String temp1Values = "\"Temp1\": [";
-    String temp2Values = "\"Temp2\": [";
-    String temp3Values = "\"Temp3\": [";
-    String luchtvochtigheidValues = "\"Luchtvochtigheid\": [";
-    String geleidbaarheidValues = "\"Geleidbaarheid\": [";
-    String flowsensorValues = "\"Flowsensor\": [";
-
-    for (int i = 0; i < numMeasurements; i++) {
-      temperatuurGasValues += String(measurements[i].temperature);
-      zuurtegradenValues += String(measurements[i].phValue);
-      stroomValues += String(measurements[i].AcsValueF);
-      spanningValues += String(measurements[i].Volt);
-      temp1Values += String(measurements[i].DS18B20_1);
-      temp2Values += String(measurements[i].DS18B20_2);
-      temp3Values += String(measurements[i].DS18B20_3);
-      luchtvochtigheidValues += String(measurements[i].humidity);
-      geleidbaarheidValues += String(measurements[i].ecValue);
-      flowsensorValues += String(measurements[i].flowRate);
-
-      if (i < numMeasurements - 1) {
-        temperatuurGasValues += ", ";
-        zuurtegradenValues += ", ";
-        stroomValues += ", ";
-        spanningValues += ", ";
-        temp1Values += ", ";
-        temp2Values += ", ";
-        temp3Values += ", ";
-        luchtvochtigheidValues += ", ";
-        geleidbaarheidValues += ", ";
-        flowsensorValues += ", ";
-      }
-    }
-
-    // Close the arrays
-    temperatuurGasValues += "]";
-    zuurtegradenValues += "]";
-    stroomValues += "]";
-    spanningValues += "]";
-    temp1Values += "]";
-    temp2Values += "]";
-    temp3Values += "]";
-    luchtvochtigheidValues += "]";
-    geleidbaarheidValues += "]";
-    flowsensorValues += "]";
-
-    // Construct the final payload
-    payload += temperatuurGasValues + ", " +
-               zuurtegradenValues + ", " +
-               stroomValues + ", " +
-               spanningValues + ", " +
-               temp1Values + ", " +
-               temp2Values + ", " +
-               temp3Values + ", " +
-               luchtvochtigheidValues + ", " +
-               geleidbaarheidValues + ", " +
-               flowsensorValues + "}}";
-      
-    //Serial.println(payload);
-    // Push the measurement to the queue
-    if (xQueueSend(measurementQueue, &measurement, portMAX_DELAY) != pdPASS) {
-      Serial.println("Failed to send to queue.");
-    }
-    currentMeasurementIndex = 0; // Reset the index for the next batch of measurements
-    sendhttp=true;                // Set flag to send http request
-  }
-}
-*/
-//Backup of Measuring task
-/*
-void Measuring(void *parameter)
-{
-  Serial.println("Inside Measuring task.");
-  for (;;)
-  {              
-  while(1){vTaskDelay(1000 / portTICK_PERIOD_MS);}
-  String flowString = "Flow: " + String(readFlowsensor()) + " L/min";  
-  printSmallOled(flowString);
-  
-  MQ7.update();
-  ppmCO = MQ7.readSensor();
-  Serial.print("CO value: ");
-  Serial.println(ppmCO);
-  //vTaskDelay(1000 / portTICK_PERIOD_MS);
-
-  MQ8.update();
-  ppmH = MQ8.readSensor();
-  Serial.print("H value: ");
-  Serial.println(ppmH);
-  //vTaskDelay(1000 / portTICK_PERIOD_MS);
-  temperature = dht_sensor.readTemperature();
-  humidity = dht_sensor.readHumidity();
-    
-  Serial.print("Temperature: ");    Serial.println(temperature);
-  Serial.print("Humidity: ");       Serial.println(humidity);
-
-  AllDS18B20Sensors();
-  //float p = pH();
-  //float c = CurrentSensor();
-  // Wait for a short period'
-  // Update the Big display
-  String tempDis      = "Temp___:" + String(temperature) + char(176) +"C";
-  String humidityDis  = "Humid__:" + String(humidity)+     " %";
-  String coDis        = "CO_____:" + String(ppmCO) +      " ppm";
-  String flowDis      = "Flow___:" + String(readFlowsensor()) +  " L/min"; 
-  String ecDis        = "EC_____:" + String(Cond()) +     " ms/cm";
-  String DS18B20_1_Dis= "DStem_1:" + String(DS18B20_1) + char(176) +"C";
-  String DS18B20_2_Dis= "DStem_2:" + String(DS18B20_2) + char(176) +"C";
-  String DS18B20_3_Dis= "DStem_3:" + String(DS18B20_3) + char(176) +"C";
-  String Current_Dis  = "Current:" + String(CurrentSensor()) + " A";
-  String pH_Dis       = "pH:" + String(pH()) + " A";
-
-  if(state==2){
-    bigOled.firstPage();
-    do {
-      bigOled.setFont(u8g2_font_5x8_tr); //Was u8g2_font_ncenB08_tr
-      bigOled.drawStr(0, 10, tempDis.c_str());
-      bigOled.drawStr(0, 20, coDis.c_str());
-      bigOled.drawStr(0, 30, flowDis.c_str());
-      bigOled.drawStr(0, 40, humidityDis.c_str());
-      bigOled.drawStr(0, 50, ecDis.c_str());
-      bigOled.drawStr(0, 60, DS18B20_1_Dis.c_str());
-    } while (bigOled.nextPage());
-  }
-  else if(state==3){
-    bigOled.firstPage();
-    do {
-      bigOled.setFont(u8g2_font_6x10_tr); //Was u8g2_font_ncenB08_tr
-      bigOled.drawStr(0, 10, tempDis.c_str());
-      bigOled.drawStr(0, 20, coDis.c_str());
-      bigOled.drawStr(0, 30, flowDis.c_str());
-      bigOled.drawStr(0, 40, humidityDis.c_str());
-      bigOled.drawStr(0, 50, ecDis.c_str());
-      bigOled.drawStr(0, 60, DS18B20_1_Dis.c_str());
-      bigOled.drawStr(0, 70, DS18B20_2_Dis.c_str());
-      bigOled.drawStr(0, 80, Current_Dis.c_str());
-
-    } while (bigOled.nextPage());
-  }
-  vTaskDelay(1000 / portTICK_PERIOD_MS);
-  }
-}
-*/
-
-/*
-void post_http_array(){  
-  int dateTime2[6] ={1734087000, 1734087001, 1734087002, 1734087003, 1734087004, 1734087005};
-  float ecValue2[6];
-  float temperature_4[6];
-  float humidity_4[6];
-  float flowSensor2[6];
-  
-  // Prepare JSON payload
-  String jsonPayload = "{";
-  jsonPayload += "\"ts\": [" + String(dateTime2[0]);
-  for (int i = 1; i < 6; i++) {
-    jsonPayload += ", " + String(dateTime2[i]);
-  }
-  jsonPayload += "],";
-  jsonPayload += "\"values\": {";
-  jsonPayload += "\"Temperatuur_gas\": [" + String(flowSensor2[0]);
-  for (int i = 1; i < 6; i++) {
-    jsonPayload += ", " + String(flowSensor2[i]);
-  }
-  jsonPayload += "],";
-  jsonPayload += "\"Temperatuur_vloeistof\": [" + String(flowSensor2[0]);
-  for (int i = 1; i < 6; i++) {
-    jsonPayload += ", " + String(flowSensor2[i]);
-  }
-   jsonPayload += "],";
-  jsonPayload += "\"Stroom\": [" + String(ecValue2[0]);
-  for (int i = 1; i < 6; i++) {
-    jsonPayload += ", " + String(ecValue2[i]);
-  }
-  jsonPayload += "],";
-  jsonPayload += "\"Ph\": [" + String(ecValue2[0]);
-  for (int i = 1; i < 6; i++) {
-    jsonPayload += ", " + String(ecValue2[i]);
-  }
-  jsonPayload += "],";
-  jsonPayload += "\"Spanning\": [" + String(flowSensor2[0]);
-  for (int i = 1; i < 6; i++) {
-    jsonPayload += ", " + String(flowSensor2[i]);
-  }
-  jsonPayload += "],";
-   jsonPayload += "\"Geleidbaarheid\": [" + String(flowSensor2[0]);
-  for (int i = 1; i < 6; i++) {
-    jsonPayload += ", " + String(flowSensor2[i]);
-  }
-  jsonPayload += "],";
-  jsonPayload += "\"flowSensor4\": [" + String(flowSensor2[0]);
-  for (int i = 1; i < 6; i++) {
-    jsonPayload += ", " + String(flowSensor2[i]);
-  }
-  jsonPayload += "]";
-  jsonPayload += "}}";
-
-
-
-
-  Serial.println(String(jsonPayload));
-}
-*/
