@@ -28,9 +28,10 @@ struct Measurement {
   float humidity;
   float ppmH;
   float ppmCO;
+  struct timeval timestamp;
 };
 
-extern Measurement measurement;
+//extern Measurement measurement;
 /*      Configuration     */
 extern bool sendhttp;
 extern String payload;
@@ -72,7 +73,6 @@ void printSmallOled(String x);
 
 
 /*      DS18B20 sensor       */
-//extern struct Measurement measurement;
 extern const int DS18B20_PIN;
 void printDS18B20Address();
 void AllDS18B20Sensors(Measurement& measurement);
