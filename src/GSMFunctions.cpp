@@ -1,5 +1,6 @@
 #include "config.h"
 extern HardwareSerial gsmSerial;
+volatile int stateBigOled, stateOled = 1;
 String response ,longitude, latitude, date, time_gsm, jsonPayload = "";
 /*
 void readGsmResponse() {

@@ -104,8 +104,35 @@ float readFlowsensor(){
     return flowRate;
 }
 
+float readFlowSensorTemperature(int FlowSensorTempPin) {
+  // Read the voltage at the ADC pin
+  int adcValue = analogRead(FlowSensorTempPin);
+  float voltage = adcValue * (3.3 / 4096.0);
+
+  // Calculate the resistance of the NTC sensor
+  float resistance = (10000 * voltage) / (3.3 - voltage);
+
+  // Calculate the temperature in degrees Celsius
+  float temperature = 1 / (log(resistance / 10000) / 3950 + 1 / 298.15) - 273.15;
+
+  return temperature;
+}
+//Read water quality
+float readFlowSensorTDS(int FlowSensorTDSPin, float voltageMultiplier, float voltageOffset, float tdsCalibrationFactor) {
+  // Read the voltage at the ADC pin
+  int adcValue = analogRead(FlowSensorTDSPin);
+  float voltage = adcValue * (3.3 / 4096.0);
+
+  // Apply voltage multiplier and offset
+  voltage = voltage * voltageMultiplier + voltageOffset;
+
+  // Calculate the TDS value
+  float tdsValue = voltage * tdsCalibrationFactor;
+
+  return tdsValue;
+}
 /*      Switching screens           */
-volatile int stateBigOled, stateOled = 1; //  state 1 = GSM screen, state 2 = Oled screen
+//extern volatile int stateBigOled, stateOled; //  state 1 = GSM screen, state 2 = Oled screen
 volatile bool buttonPressed, buttonSmallPressed = false;
 
 /*      MQ-7 MQ-8 sensor            */
@@ -240,6 +267,7 @@ void printBigOled(String x){
 }
 
 /*              Setup Currentsensor    */
+//Prints current in mA
 float AcsValue, AvgAcs, AcsValueF, Samples =0.0;   //Sensor leesspanning | - | gem. leesspanning | Stroom
 
 float CurrentSensor_quick(){
@@ -256,8 +284,9 @@ AvgAcs=Samples/100.0;             //De gemiddeldes bij elkaar zetten
 //you must change the offset according to the input voltage)
 //0.185v(185mV) is rise in output voltage when 1A current flows at input
 
-AcsValueF = (2.5 - (AvgAcs * (5.0 / 1024.0)) )/0.185;
-
+//AcsValueF = (2.5 - (AvgAcs * (3.3 / 1024.0)) )/0.185;
+int R1, R2 = 1000; //Voltage devider of the current sensor 
+AcsValueF = (((AvgAcs * (3.3 / 1024.0)) * (R1+R2)/R2) -2.5)/1000; //Formula for voltage divider is inverted to compensate for itself
 //Serial.println(AcsValueF);//Print the read current on Serial monitor
 return AcsValueF;
 }

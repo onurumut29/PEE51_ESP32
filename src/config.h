@@ -90,6 +90,7 @@ void AllDS18B20Sensors(Measurement& measurement);
 extern const int flowSensorPin;
 float readFlowsensor();
 void IRAM_ATTR pulseCounter();
+float readFlowSensorTemperature(int FlowSensorTempPin);
 
 /*      Bluetooth          */
 extern BluetoothSerial SerialBT;

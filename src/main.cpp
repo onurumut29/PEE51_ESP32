@@ -48,7 +48,7 @@ const int DS18B20_PIN = 27;
 extern volatile float DS18B20_1, DS18B20_2,DS18B20_3, DS18B20_4, DS18B20_5; // Initialize to a default value
 
 /*      Setup Flowsensor                */
-const int flowSensorPin = 36; //4
+const int flowSensorPin = 4; //36
 
 /*      Bluetooth                       */
 BluetoothSerial SerialBT;
@@ -61,6 +61,7 @@ SemaphoreHandle_t fileMutex = NULL; //Handler for the log.txt file
 /*      Switch screen                   */
 int buttonbigOled = 13; // Pin connected to the button
 int buttonsmallOled = 14;
+
 extern bool buttonPressed, buttonSmallPressed;
 U8G2_WITH_HVLINE_SPEED_OPTIMIZATION
 /*      Conductivity sensor                       */
@@ -155,12 +156,12 @@ void Measuring(void *parameter) {
  
     static int temperatureCount = 0, phValueCount = 0, humidityCount = 0, ecValueCount = 0, flowRateCount = 0;
     static int acsValueFCount = 0, ds18b20Count = 0, voltCount = 0, h2Count = 0;
-unsigned long start_time, end_time, duration_temperature, duration_phValue, duration_humidity, duration_ecValue;
-unsigned long duration_flowRate, duration_acsValueF, duration_ds18b20, duration_h2, duration_volt;
+    unsigned long start_time, end_time, duration_temperature, duration_phValue, duration_humidity, duration_ecValue;
+    unsigned long duration_flowRate, duration_acsValueF, duration_ds18b20, duration_h2, duration_volt;
 
-// Initialize durations to zero
-duration_temperature = duration_phValue = duration_humidity = duration_ecValue = 0;
-duration_flowRate = duration_acsValueF = duration_ds18b20 = duration_h2 = duration_volt = 0;
+  // Initialize durations to zero
+  duration_temperature = duration_phValue = duration_humidity = duration_ecValue = 0;
+  duration_flowRate = duration_acsValueF = duration_ds18b20 = duration_h2 = duration_volt = 0;
 
 if (temperatureCount < temperatureAmount) {
     start_time = micros();
@@ -243,6 +244,7 @@ if (voltCount < voltAmount) {
     duration_volt = end_time - start_time;
 }
 
+/*
 // Print the durations for each block
 Serial.print("Temperature measurement time: "); Serial.println(duration_temperature);
 Serial.print("pH measurement time: "); Serial.println(duration_phValue);
@@ -253,6 +255,10 @@ Serial.print("ACS value measurement time: "); Serial.println(duration_acsValueF)
 Serial.print("DS18B20 measurement time: "); Serial.println(duration_ds18b20);
 Serial.print("H2 measurement time: "); Serial.println(duration_h2);
 Serial.print("Voltage measurement time: "); Serial.println(duration_volt);
+*/
+Serial.println("Flow sensor temperature: " + String(readFlowSensorTemperature(39)));
+Serial.println("Flow sensor : " + String(readFlowsensor()));
+Serial.println("pH: " + String(pH()));
 
   measurement.ts = savedTimestamp * 1000 + micros();  
   Serial.println("timestamp with micros: " + String(savedTimestamp * 1000 +micros()));
@@ -738,7 +744,9 @@ void setup() {
   vTaskDelay(3000 / portTICK_PERIOD_MS);
   SD_init();
   vTaskDelay(100 / portTICK_PERIOD_MS);
-  read_configuration();
+  if (SD.begin(CS_PIN)) {
+         read_configuration();
+    }
   vTaskDelay(100 / portTICK_PERIOD_MS);
   init_displays();
   vTaskDelay(3000 / portTICK_PERIOD_MS);
