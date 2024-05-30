@@ -62,6 +62,7 @@ void AllDS18B20Sensors(Measurement& measurement) {
         }
     }
   }  
+  sensors.setResolution(9);
 }
 
 /*              Setup Flowsensor    */
@@ -104,7 +105,7 @@ float readFlowsensor(){
 }
 
 /*      Switching screens           */
-volatile int state, stateOled = 1; //  state 1 = GSM screen, state 2 = Oled screen
+volatile int stateBigOled, stateOled = 1; //  state 1 = GSM screen, state 2 = Oled screen
 volatile bool buttonPressed, buttonSmallPressed = false;
 
 /*      MQ-7 MQ-8 sensor            */
@@ -241,13 +242,13 @@ void printBigOled(String x){
 /*              Setup Currentsensor    */
 float AcsValue, AvgAcs, AcsValueF, Samples =0.0;   //Sensor leesspanning | - | gem. leesspanning | Stroom
 
-float CurrentSensor(){
-  for (int x = 0; x < 150; x++){  //150 samples
+float CurrentSensor_quick(){
+  for (int x = 0; x < 100; x++){  //150 samples
   AcsValue = analogRead(CurrentPin);      //uitlezen van de sensor   
   Samples = Samples + AcsValue;   //samples bij elkaar zetten
-  vTaskDelay(3 / portTICK_PERIOD_MS);                     
+  vTaskDelay(1 / portTICK_PERIOD_MS);                     
 }
-AvgAcs=Samples/150.0;             //De gemiddeldes bij elkaar zetten
+AvgAcs=Samples/100.0;             //De gemiddeldes bij elkaar zetten
 
 //((AvgAcs * (5.0 / 1024.0)) is converitng the read voltage in 0-5 volts
 //2.5 is offset(I assumed that arduino is working on 5v so the viout at no current comes

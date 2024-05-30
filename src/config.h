@@ -12,6 +12,8 @@
 #include <SPI.h>
 #include "DFRobot_PH.h"
 #include <time.h>
+#include <nvs_flash.h>
+#include <nvs.h>
 
 struct Measurement {
   float phValue;
@@ -28,10 +30,13 @@ struct Measurement {
   float humidity;
   float ppmH;
   float ppmCO;
-  struct timeval timestamp;
-};
+  time_t timestamp;
+  uint64_t timestamp_ms;
+  uint64_t ts;
+  int milliseconds; 
+}; 
+extern Measurement measurement;
 
-//extern Measurement measurement;
 /*      Configuration     */
 extern bool sendhttp;
 extern String payload;
@@ -46,9 +51,11 @@ void mq8_init(MQUnifiedsensor& MQ8);
 
 //For GSMSerial output on OLED
 extern U8G2LOG u8g2log;
-extern volatile int state, stateOled;
+extern volatile int stateBigOled, stateOled;
 
 /*      GSM Functions    */
+void saveTimestamp(uint64_t timestamp);
+uint64_t getSavedTimestamp();
 
 void parseDatetime();
 //extern HardwareSerial gsmSerial;
@@ -73,6 +80,7 @@ void printSmallOled(String x);
 
 
 /*      DS18B20 sensor       */
+//extern struct Measurement measurement;
 extern const int DS18B20_PIN;
 void printDS18B20Address();
 void AllDS18B20Sensors(Measurement& measurement);
@@ -125,6 +133,6 @@ float Cond();
 
 /*      Current Sensor   */
 extern int CurrentPin;
-float CurrentSensor();
+float CurrentSensor_quick();
 
 #endif // CONFIG_H

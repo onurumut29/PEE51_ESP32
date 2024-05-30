@@ -31,7 +31,9 @@ void readGsmResponse() {
             c = char(byteFromSerial);
             response += c;
             Serial.write(byteFromSerial);
+            if(stateBigOled==1 || stateBigOled==2){
             u8g2log.print(c); 
+            }
             lastReadTime = millis(); // Update last read time
             //vTaskDelay(1/portTICK_PERIOD_MS);//delay(5);
         }
@@ -79,8 +81,11 @@ void parseDatetime() {
     time_gsm = data.substring(fourthComma + 1);
 
     // Check if the date and time are valid
-    if (date == "0.000000" || time_gsm == "0.000000") {
+    if (date.toDouble() == 0.000000 || time_gsm.toDouble() == 0.000000) {
       Serial.println("Error: Invalid date/time, trying again...");
+      Serial.println("Parsed Date: " + date);
+      Serial.println("Parsed Time: " + time_gsm);
+
       gsmSerial.println("AT+CIPGSMLOC=2,1");
       vTaskDelay(100 / portTICK_PERIOD_MS);
       readGsmResponse();
@@ -110,11 +115,12 @@ void parseDatetime() {
     }
 
     // Check if the date and time are reasonable values
-    long ts = convertToUnixTimestamp(date, time_gsm);
-    if (ts < 0) {
-      Serial.println("Error: Invalid date/time, trying again...");
-      continue;  // Retry
-    }
+    //long long ts = convertToUnixTimestamp(date, time_gsm);
+    //if (ts < 0) {
+    //  Serial.println("Error: Invalid date/time, trying again...");
+    //  Serial.println("Parsed ts: " + ts);
+    //  continue;  // Retry
+    //}
 
     // If all validations pass, set validResponse to true
     validResponse = true;
@@ -216,6 +222,7 @@ void getTimeNow(){
     convertToUnixTimestamp(date, time_gsm);
     vTaskDelay(100 / portTICK_PERIOD_MS); 
 }
+/*
 time_t convertToUnixTimestamp(String date, String time) {
   // Extract year, month, day from date
   int year = date.substring(0, 4).toInt();
@@ -226,7 +233,7 @@ time_t convertToUnixTimestamp(String date, String time) {
   int hour = time.substring(0, 2).toInt();
   int minute = time.substring(3, 5).toInt();
   int second = time.substring(6, 8).toInt();
-
+  
   // Create a tm struct
   struct tm t;
   t.tm_year = year - 1900; // tm_year is years since 1900
@@ -245,6 +252,72 @@ time_t convertToUnixTimestamp(String date, String time) {
 
   return timestamp;
 }
+*/
+#include <nvs_flash.h>
+#include <nvs.h>
+
+void saveTimestamp(uint64_t timestamp_ms) {
+    nvs_flash_init();
+    nvs_handle_t my_handle;
+    nvs_open("storage", NVS_READWRITE, &my_handle);
+    nvs_set_u64(my_handle, "timestamp_ms", timestamp_ms);
+    nvs_commit(my_handle);
+    nvs_close(my_handle);
+}
+
+uint64_t getSavedTimestamp() {
+    uint64_t timestamp_ms = 0;
+    nvs_flash_init();
+    nvs_handle_t my_handle;
+    nvs_open("storage", NVS_READWRITE, &my_handle);
+    nvs_get_u64(my_handle, "timestamp_ms", &timestamp_ms);
+    nvs_close(my_handle);
+    return timestamp_ms;
+}
+
+time_t convertToUnixTimestamp(String date, String time) {
+  // Extract year, month, day from date
+  int year = date.substring(0, 4).toInt();
+  int month = date.substring(5, 7).toInt();
+  int day = date.substring(8, 10).toInt();
+  
+  // Extract hour, minute, second, millisecond from time
+  int hour = time.substring(0, 2).toInt();
+  int minute = time.substring(3, 5).toInt();
+  int second = time.substring(6, 8).toInt();
+  int millisecond = time.substring(9, 12).toInt(); // Assuming time is formatted as HH:MM:SS.mmm
+
+  // Create a tm struct
+  struct tm t;
+  memset(&t, 0, sizeof(t));  // Initialize to zero
+  t.tm_year = year - 1900;   // tm_year is years since 1900
+  t.tm_mon = month - 1;      // tm_mon is 0-11
+  t.tm_mday = day;
+  t.tm_hour = hour;
+  t.tm_min = minute;
+  t.tm_sec = second;
+  t.tm_isdst = -1;           // Not set by default
+
+  // Convert to time_t (UNIX timestamp)
+  time_t timestamp = mktime(&t);
+  if (timestamp == -1) {
+    Serial.println("Failed to convert time using mktime.");
+    return -1;
+  }
+  
+  // Print the intermediate timestamp
+  Serial.println("Intermediate timestamp: " + String(timestamp));
+
+  // Calculate the timestamp with milliseconds
+  measurement.timestamp_ms = timestamp * 1000LL; // + millisecond;
+
+  // Print the final timestamp with milliseconds
+  Serial.println("Final timestamp with milliseconds: " + String(measurement.timestamp_ms));
+  saveTimestamp(measurement.timestamp_ms);
+  return measurement.timestamp_ms; 
+}
+
+
 
 void post_http(String jsonPayload){
     /*          Post HTTP data                */
