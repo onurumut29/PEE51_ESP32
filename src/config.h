@@ -88,6 +88,13 @@ void AllDS18B20Sensors(Measurement& measurement);
 
 /*      Flow sensor       */
 extern const int flowSensorPin;
+extern long currentMillis_flowsensor, previousMillis_flowsensor;
+extern int interval; //50 is de flicker extreem
+extern float calibrationFactor;
+extern volatile unsigned long pulseCount;
+extern unsigned long pulse1Sec;
+extern float flowRate, flowSensorValue;
+extern unsigned int flowMilliLitres;
 float readFlowsensor();
 void IRAM_ATTR pulseCounter();
 float readFlowSensorTemperature(int FlowSensorTempPin);

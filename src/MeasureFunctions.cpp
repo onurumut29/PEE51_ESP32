@@ -67,12 +67,13 @@ void AllDS18B20Sensors(Measurement& measurement) {
 
 /*              Setup Flowsensor    */
 long currentMillis_flowsensor, previousMillis_flowsensor = 0;
-int interval = 200; //50 is de flicker extreem
+int interval = 50; //50 is de flicker extreem
 float calibrationFactor = 21.0;
 volatile unsigned long pulseCount;
 unsigned long pulse1Sec = 0;
 float flowRate, flowSensorValue = 0.0;
 unsigned int flowMilliLitres;
+
 
 void IRAM_ATTR pulseCounter()
 {
@@ -82,7 +83,7 @@ void IRAM_ATTR pulseCounter()
 float readFlowsensor(){
   currentMillis_flowsensor = millis();
   if (currentMillis_flowsensor - previousMillis_flowsensor > interval) {
-    
+    Serial.print("pulseCount: "+ String(pulseCount));
     pulse1Sec = pulseCount;
     pulseCount = 0;
     flowRate = ((1000.0 / interval) * pulse1Sec) / calibrationFactor;
@@ -90,10 +91,10 @@ float readFlowsensor(){
   
     flowMilliLitres = (flowRate / 60) * 1000;
 
-    //Serial.print("Flow rate: ");
-    //Serial.print(flowRate, 3);  
-    //Serial.print("L/min");
-    //Serial.print("\t"); 
+    Serial.print("Flow rate: ");
+    Serial.print(flowRate, 3);  
+    Serial.print("L/min");
+    Serial.print("\t"); 
 
     //Serial.print("Flow rate ml/min: ");
     //Serial.print(flowMilliLitres, 3);  

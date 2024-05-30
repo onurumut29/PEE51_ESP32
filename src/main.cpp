@@ -48,7 +48,7 @@ const int DS18B20_PIN = 27;
 extern volatile float DS18B20_1, DS18B20_2,DS18B20_3, DS18B20_4, DS18B20_5; // Initialize to a default value
 
 /*      Setup Flowsensor                */
-const int flowSensorPin = 4; //36
+const int flowSensorPin = 36;
 
 /*      Bluetooth                       */
 BluetoothSerial SerialBT;
