@@ -32,7 +32,7 @@ void readGsmResponse() {
             c = char(byteFromSerial);
             response += c;
             Serial.write(byteFromSerial);
-            if(stateBigOled==1 || stateBigOled==2){
+            if(stateBigOled==1){
             u8g2log.print(c); 
             }
             lastReadTime = millis(); // Update last read time
@@ -59,6 +59,7 @@ void parseDatetime() {
     int startIndex = resp.indexOf("+CIPGSMLOC: ");
     if (startIndex == -1) {
       Serial.println("Error: Invalid time, trying again...");
+      Serial.println("Response: " + resp);
       continue;  // Retry
     }
 
@@ -96,6 +97,7 @@ void parseDatetime() {
       startIndex = resp.indexOf("+CIPGSMLOC: ");
       if (startIndex == -1) {
         Serial.println("Error: Invalid time, trying again...");
+        Serial.println("Response: " + resp);
         continue;  // Retry
       }
 

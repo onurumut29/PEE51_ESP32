@@ -7,10 +7,12 @@
 #include <Preferences.h>
 Preferences rtcPrefs;
 
+#include "esp_attr.h"
+
 /*      GSM Module Setup     */
 HardwareSerial gsmSerial(2); // Use UART2
-#define GSM_RX_PIN 16 //13
-#define GSM_TX_PIN 17 //14
+#define GSM_RX_PIN 17 //16
+#define GSM_TX_PIN 16 //17
 #define GSM_RST_PIN 12 //Not connected
 extern String date;
 extern String time_gsm;
@@ -34,21 +36,27 @@ MQUnifiedsensor MQ7("ESP32", 3.3, 12, Pin_MQ7, "MQ-7");
 /*      MQ-8 H2 sensor                   */
 #define Pin_MQ8 32
 MQUnifiedsensor MQ8("ESP32", 3.3, 12, Pin_MQ8, "MQ-8");
-volatile float ppmH, ppmCO = 0.00;
+//volatile float ppmH, ppmCO = 0.00;
 
 /*      DHT22 - Temperature and Humidity */
 #include "DHT.h"
 #define DHT_SENSOR_PIN 25 
 #define DHT_SENSOR_TYPE DHT22
 DHT dht_sensor(DHT_SENSOR_PIN, DHT_SENSOR_TYPE);
-volatile float temperature, humidity = 0.00;
+//volatile float temperature, humidity = 0.00;
 
 /*      Setup Temperature sensor        */
 const int DS18B20_PIN = 27;
-extern volatile float DS18B20_1, DS18B20_2,DS18B20_3, DS18B20_4, DS18B20_5; // Initialize to a default value
+extern volatile float DS18B20_1, DS18B20_2, DS18B20_3, DS18B20_4, DS18B20_5; // Initialize to a default value
 
 /*      Setup Flowsensor                */
 const int flowSensorPin = 36;
+const float flowSensorCalibration = 21.00;
+const int FlowSensorTempPin = 26;
+
+/*      Setup 2nd Flowsensor                */
+const int flowSensor2Pin = 4;
+const float flowSensorCalibration2 = 7.50;
 
 /*      Bluetooth                       */
 BluetoothSerial SerialBT;
@@ -62,10 +70,10 @@ SemaphoreHandle_t fileMutex = NULL; //Handler for the log.txt file
 int buttonbigOled = 13; // Pin connected to the button
 int buttonsmallOled = 14;
 
-extern bool buttonPressed, buttonSmallPressed;
+extern bool buttonBigPressed, buttonSmallPressed;
 U8G2_WITH_HVLINE_SPEED_OPTIMIZATION
 /*      Conductivity sensor                       */
-int CondPin = 39; 
+int EC_PIN = 39; 
 
 /*      Current sensor                  */
 int CurrentPin = 33; 
@@ -83,9 +91,10 @@ QueueHandle_t measurementQueue;
 const int queueLength = 40; // Adjust the length according to your needs
 
 Measurement measurement;
-int temperatureAmount, ds18b20Amount, h2Amount = 15;
-int phValueAmount, humidityAmount, ecValueAmount, flowRateAmount, voltAmount = 60;
-int acsAmount = 30;
+int flowRateAmount, h2Amount = 5;
+int temperatureAmount, ds18b20Amount = 15;
+int phValueAmount, humidityAmount, ecValueAmount, voltAmount = 100;
+int acsAmount = 60;
 const int numMeasurements = std::max({temperatureAmount, phValueAmount, humidityAmount, ecValueAmount, flowRateAmount, acsAmount, ds18b20Amount, h2Amount, voltAmount});
 Measurement* measurements = new Measurement[numMeasurements];
 int currentMeasurementIndex = 0;  
@@ -201,7 +210,7 @@ if (ecValueCount < ecValueAmount) {
 
 if (flowRateCount < flowRateAmount) {
     start_time = micros();
-    measurement.flowRate = readFlowsensor();
+    measurement.flowRate = (readFlowsensor()/flowSensorCalibration);
     if (isnan(measurement.flowRate) || isinf(measurement.flowRate)) measurement.flowRate = 0;
     flowRateCount++;
     end_time = micros();
@@ -256,15 +265,10 @@ Serial.print("DS18B20 measurement time: "); Serial.println(duration_ds18b20);
 Serial.print("H2 measurement time: "); Serial.println(duration_h2);
 Serial.print("Voltage measurement time: "); Serial.println(duration_volt);
 */
-Serial.println("Flow sensor temperature: " + String(readFlowSensorTemperature(39)));
-Serial.println("Flow sensor : " + String(readFlowsensor()));
-Serial.println("pH: " + String(pH()));
 
   measurement.ts = savedTimestamp * 1000 + micros();  
-  Serial.println("timestamp with micros: " + String(savedTimestamp * 1000 +micros()));
-  Serial.println("measurements.ts: " + String(measurement.ts));
-
-  //Serial.println("timestamp with millis: " + String(measurement.ts));
+  //Serial.println("timestamp with micros: " + String(savedTimestamp * 1000 +micros()));
+  //Serial.println("measurements.ts: " + String(measurement.ts));
 
     measurements[currentMeasurementIndex] = measurement;
     currentMeasurementIndex++;
@@ -274,7 +278,10 @@ Serial.println("pH: " + String(pH()));
     //buffer[0];
     buffer[0] = '\0';
     if (currentMeasurementIndex == numMeasurements) {
-    TickType_t startTime = xTaskGetTickCount();         
+
+      Serial.println("pH: " + String(pH()));
+
+      TickType_t startTime = xTaskGetTickCount();         
 
       //time_t now = time(NULL);
       //bufferIndex = snprintf(buffer, bufferSize, "{\"ts\": %ld, \"values\": {", now);
@@ -394,15 +401,17 @@ Serial.println("pH: " + String(pH()));
           Serial.println("Message formed in MeasureTask:");
           printBufferInChunks(buffer, bufferIndex);
           Serial.println("Size of message (In Measure Task): " + String(bufferIndex));
+
+          if(duration != 0) {
+            Serial.print("MeasureTask duration: ");
+            Serial.println(duration);
+            Serial.println("");
+          } 
     }
 
           TickType_t endTime = xTaskGetTickCount();
           TickType_t duration = endTime - startTime;          
-         if(duration != 0) {
-            Serial.print("MeasureTask duration: ");
-            Serial.println(duration);
-            Serial.println("");
-          }   
+           
     vTaskDelay(10 / portTICK_PERIOD_MS);
     // Monitor stack and heap usage
     //UBaseType_t highWaterMark = uxTaskGetStackHighWaterMark(NULL);
@@ -475,47 +484,111 @@ void DisplayMeasurements(void *parameter)
   Serial.println("Inside Measuring task.");
   for (;;)
   {   
-    String tempDis      = "Temp___:  " + String(measurement.temperature) + char(176) +" °C";
-    String humidityDis  = "Humid__:  " + String(measurement.humidity)+     " %";
-    String coDis        = "CO_____:  " + String(measurement.ppmCO) +      " ppm";
-    String h2Dis        = "H2_____:  " + String(measurement.ppmH) +      " ppm";
-    String flowDis      = "Flow___:  " + String(readFlowsensor()) +  " L/min";              //Change to measurement.
-    String ecDis        = "EC_____:  " + String(Cond()) +     " ms/cm";                     //Change to measurement.
-    String DS18B20_1_Dis= "DStem_1:  " + String(measurement.DS18B20_1) + char(176) +" °C";
-    String DS18B20_2_Dis= "DStem_2:  " + String(measurement.DS18B20_2) + char(176) +" °C";
-    String DS18B20_3_Dis= "DStem_3:  " + String(measurement.DS18B20_3) + char(176) +" °C";
-    String DS18B20_4_Dis= "DStem_4:  " + String(measurement.DS18B20_4) + char(176) +" °C";
-    String Current_Dis  = "Current:  " + String(CurrentSensor_quick()) + " A";              //Change to measurement.
-    String pH_Dis       = "pH_____:  " + String(pH()) + "";                                 //Change to measurement.
+    float current_ACS = 0.01;
+    String flowDis      = "Flow: " + String((readFlowsensor()/flowSensorCalibration)) +  " L/min";              
+    //String flowDis      = "Flow: " + String(0.00) +  " L/min";              
+    String flowDis2      = "Flow2: " + String((readFlowsensor2()/flowSensorCalibration2)) +  " L/min";              
+    String tempDis      = "Temp: " + String(measurement.temperature) + " °C";
+    String humidityDis  = "Hum_: " + String(measurement.humidity)    + " %";
+    String coDis        = "CO__: " + String(measurement.ppmCO)       + " ppm";
+    String h2Dis        = "H2__: " + String(measurement.ppmH)        + " ppm";
+    String DS18B20_1_Dis= "DS_1: " + String(measurement.DS18B20_1)   + " °C";
+    String DS18B20_2_Dis= "DS_2: " + String(measurement.DS18B20_2)   + " °C";
+    String DS18B20_3_Dis= "DS_3: " + String(measurement.DS18B20_3)   + " °C";
+    String DS18B20_4_Dis= "DS_4: " + String(measurement.DS18B20_4)   + " °C";
+    String DS18B20_5_Dis= "DS_5: " + String(measurement.DS18B20_5)   + " °C";
+    String Current_Dis  = "Amp_: " + String(current_ACS)             + " A";              
+    String pH_Dis       = "pH__: " + String(pH())                    + "";                                 
+    String VoltDis      = "Volt: " + String(Volt)                    + " V";        
+    String ecDis        = "EC__: " + String(Cond())                  + " ms/cm";                     
     
-    if(stateOled==1){
-      smallOled.firstPage();
+   /*
+    String tempDis      = "Temp: "  + String(100.99) + " °C";
+    String humidityDis  = "Hum_: " + String(100.00) + " %";
+    String coDis        = "CO__: " + String(100)    + " ppm";
+    String h2Dis        = "H2__: " + String(999)    + " ppm";
+    String flowDis      = "Flow: " + String((810.00)) + " L/min";              
+    String ecDis        = "EC: "   + String(100.00) + " mS/cm";                     
+    String DS18B20_1_Dis= "DS_1: " + String(100.99) + " °C";
+    String DS18B20_2_Dis= "DS_2: " + String(100.99) + " °C";
+    String DS18B20_3_Dis= "DS_3: " + String(100.99) + " °C";
+    String DS18B20_4_Dis= "DS_4: " + String(100.99) + " °C";
+    String DS18B20_5_Dis= "DS_5: " + String(100.99) + " °C";
+    String Current_Dis  = "Amp_: " + String(100.99) + " A";              
+    String pH_Dis       = "pH__: " + String(20.0)   + "";                                 
+    String VoltDis      = "Volt: " + String(9999.99)+ " V";                                 
+    */
+
+    //#1 u8g2_font_micro_mr
+    //#2 u8g2_font_3x5im_mr
+    //For horizontal display u8g2_font_tinytim_tr
+    if(stateBigOled==2){
+      bigOled.firstPage();
     do {
-      smallOled.setFont(u8g2_font_6x10_tf); //Was u8g2_font_ncenB08_tr
-      smallOled.drawStr(0, 10, h2Dis.c_str());
-      smallOled.drawStr(0, 20, coDis.c_str());
-      smallOled.drawStr(0, 30, flowDis.c_str());
-      smallOled.drawStr(0, 40, pH_Dis.c_str());
-      smallOled.drawStr(0, 50, ecDis.c_str());
-      smallOled.drawStr(0, 60, Current_Dis.c_str());
-    } while (smallOled.nextPage());
-    }
-     if(stateOled==2){
-      smallOled.firstPage();
+      bigOled.setFont(u8g2_font_micro_mr); //Was u8g2_font_ncenB08_tr
+      bigOled.setDisplayRotation(U8G2_R1);
+      bigOled.drawStr(0, 10, h2Dis.c_str());
+      bigOled.drawStr(0, 20, VoltDis.c_str());
+      bigOled.drawStr(0, 30, Current_Dis.c_str());
+      bigOled.drawStr(0, 40, pH_Dis.c_str());
+      bigOled.drawStr(0, 50, ecDis.c_str());
+      bigOled.drawStr(0, 60, flowDis.c_str());
+      bigOled.drawStr(0, 70, tempDis.c_str());
+      bigOled.drawStr(0, 80, DS18B20_1_Dis.c_str());
+      bigOled.drawStr(0, 90, DS18B20_2_Dis.c_str());
+      bigOled.drawStr(0, 100, DS18B20_3_Dis.c_str());
+      bigOled.drawStr(0, 110, DS18B20_4_Dis.c_str());
+      bigOled.drawStr(0, 120, humidityDis.c_str());
+      bigOled.drawStr(0, 130, flowDis2.c_str());
+    } while (bigOled.nextPage());
+    }   
+    if(stateBigOled==3){
+      bigOled.firstPage();
     do {
-      smallOled.setFont(u8g2_font_6x10_tf); //Was u8g2_font_ncenB08_tr
-      smallOled.drawStr(0, 10, tempDis.c_str());
-      smallOled.drawStr(0, 20, DS18B20_1_Dis.c_str());
-      smallOled.drawStr(0, 30, DS18B20_1_Dis.c_str());
-      smallOled.drawStr(0, 40, DS18B20_1_Dis.c_str());
-      smallOled.drawStr(0, 50, DS18B20_4_Dis.c_str());
-      smallOled.drawStr(0, 60, humidityDis.c_str());
-    } while (smallOled.nextPage());
-    }
-    
+      bigOled.setFont(u8g2_font_3x5im_mr); //Was u8g2_font_ncenB08_tr
+      bigOled.setDisplayRotation(U8G2_R1);
+      bigOled.drawStr(0, 8, VoltDis.c_str());
+      bigOled.drawStr(0, 16, Current_Dis.c_str());
+      bigOled.drawStr(0, 24, h2Dis.c_str());
+      bigOled.drawStr(0, 32, ecDis.c_str());
+      bigOled.drawStr(0, 40, pH_Dis.c_str());
+      bigOled.drawStr(0, 48, flowDis.c_str());
+      bigOled.drawStr(0, 56, humidityDis.c_str());
+      bigOled.drawStr(0, 64, tempDis.c_str());
+      bigOled.drawStr(0, 72, DS18B20_1_Dis.c_str());
+      bigOled.drawStr(0, 80, DS18B20_2_Dis.c_str());
+      bigOled.drawStr(0, 88, DS18B20_3_Dis.c_str());
+      bigOled.drawStr(0, 96, DS18B20_4_Dis.c_str());
+      bigOled.drawStr(0, 104, DS18B20_5_Dis.c_str());
+      bigOled.drawStr(0, 112, coDis.c_str());      
+      bigOled.drawStr(0, 120, flowDis2.c_str());
+    } while (bigOled.nextPage());
+    } 
+    if(stateBigOled==4){
+      bigOled.firstPage();
+    do {
+      bigOled.setFont(u8g2_font_tinytim_tr); //Was u8g2_font_ncenB08_tr
+      bigOled.setDisplayRotation(U8G2_R0);
+      bigOled.drawStr(0, 8, VoltDis.c_str());
+      bigOled.drawStr(65, 8, Current_Dis.c_str());
+      bigOled.drawStr(0, 16, h2Dis.c_str());
+      bigOled.drawStr(0, 24, ecDis.c_str());
+      bigOled.drawStr(0, 32, tempDis.c_str());      
+      bigOled.drawStr(65, 32, DS18B20_1_Dis.c_str());
+      bigOled.drawStr(0, 40, DS18B20_2_Dis.c_str());
+      bigOled.drawStr(65, 40, DS18B20_3_Dis.c_str());
+      bigOled.drawStr(0, 48, DS18B20_4_Dis.c_str());
+      bigOled.drawStr(65, 48, DS18B20_4_Dis.c_str());
+      bigOled.drawStr(0, 56, pH_Dis.c_str());
+      bigOled.drawStr(65, 56, humidityDis.c_str());
+      bigOled.drawStr(0, 64, flowDis.c_str());
+      bigOled.drawStr(70, 64, flowDis2.c_str());
+    } while (bigOled.nextPage());
+    } 
     vTaskDelay(500 / portTICK_PERIOD_MS);
   }
   }
+  
 TaskHandle_t Task1, Task2, Task3, Task4 = NULL;
 
 String createPayload(long timestamp, float temperature, float phValue, float AcsValueF, float Volt, float DS18B20_1, float DS18B20_2, float DS18B20_3, float humidity, float ecValue, float flowRate) 
@@ -573,18 +646,6 @@ void generateJson(){
     post_http(payload);  
 }
 
-void post2(){
-  float Volt = 27.22; //Placeholder for voltage
-  time_t timestamp = convertToUnixTimestamp(date, time_gsm);
-  String payload = createPayload(timestamp, temperature, pH(), CurrentSensor_quick(), Volt, DS18B20_1, DS18B20_2, DS18B20_3, humidity, Cond(), readFlowsensor());
-
-    Serial.print("Payload in post2: ");
-    Serial.println(payload);
-    vTaskDelay(5000 / portTICK_PERIOD_MS);
-    logMeasurement(payload);
-    post_http(payload);
-}
-
 void processLine(String line){
   line.trim(); // Remove any leading or trailing whitespace  
   int colonIndex = line.indexOf(':');
@@ -598,7 +659,7 @@ void processLine(String line){
   int pinValue = pinValueStr.toInt();
   
   
-  if(pinName == "GSM_RX_PIN" || pinName == "GSM_TX_PIN" || pinName == "GSM_RST_PIN" || pinName == "Pin_MQ7" || pinName == "Pin_MQ8" || pinName == "DHT_SENSOR_PIN" || pinName == "DS18B20_PIN" || pinName == "flowSensorPin" || pinName == "buttonbigOled" || pinName == "buttonsmallOled" || pinName == "CondPin" || pinName == "CurrentPin" || pinName == "PH_PIN")
+  if(pinName == "GSM_RX_PIN" || pinName == "GSM_TX_PIN" || pinName == "GSM_RST_PIN" || pinName == "Pin_MQ7" || pinName == "Pin_MQ8" || pinName == "DHT_SENSOR_PIN" || pinName == "DS18B20_PIN" || pinName == "flowSensorPin" || pinName == "buttonbigOled" || pinName == "buttonsmallOled" || pinName == "EC_PIN" || pinName == "CurrentPin" || pinName == "PH_PIN")
   {
     if(pinValue < 0 || pinValue > 39)
     {
@@ -626,8 +687,8 @@ void processLine(String line){
       buttonbigOled = pinValue;
     } else if (pinName == "buttonsmallOled") {
       buttonsmallOled = pinValue;
-    } else if (pinName == "CondPin") {
-      CondPin = pinValue;
+    } else if (pinName == "EC_PIN") {
+      EC_PIN = pinValue;
     } else if (pinName == "CurrentPin") {
       CurrentPin = pinValue;
     } else if (pinName == "PH_PIN") {
@@ -708,7 +769,7 @@ void read_configuration(){
   Serial.print("flowSensorPin: ");    Serial.println(flowSensorPin);
   Serial.print("buttonbigOled: ");    Serial.println(buttonbigOled);
   Serial.print("buttonsmallOled: ");  Serial.println(buttonsmallOled);
-  Serial.print("CondPin: ");          Serial.println(CondPin);
+  Serial.print("EC_PIN: ");          Serial.println(EC_PIN);
   Serial.print("CurrentPin: ");       Serial.println(CurrentPin);
   Serial.print("PH_PIN: ");           Serial.println(PH_PIN);
   Serial.print("CS_PIN: ");           Serial.println(CS_PIN);
@@ -741,7 +802,7 @@ void read_configuration(){
 void setup() {
   Serial.begin(115200); // Initialize Serial for debug output
   setCpuFrequencyMhz(240);
-  vTaskDelay(3000 / portTICK_PERIOD_MS);
+  vTaskDelay(1000 / portTICK_PERIOD_MS);
   SD_init();
   vTaskDelay(100 / portTICK_PERIOD_MS);
   if (SD.begin(CS_PIN)) {
@@ -749,17 +810,19 @@ void setup() {
     }
   vTaskDelay(100 / portTICK_PERIOD_MS);
   init_displays();
-  vTaskDelay(3000 / portTICK_PERIOD_MS);
+  vTaskDelay(1000 / portTICK_PERIOD_MS);
+
   bigOled.firstPage();
   do {
-    bigOled.setFont(u8g2_font_5x7_tr); //u8g2_font_ncenB08_tr
-    bigOled.drawStr(0, 20, "Giving time for SIM800L ");
-    bigOled.drawStr(0, 40, "to start up.");
+    bigOled.setFont(u8g2_font_tinytim_tr); //u8g2_font_ncenB08_tr
+    bigOled.drawStr(0, 20, "Giving time");
+    bigOled.drawStr(0, 40, "for SIM800L ");
+    bigOled.drawStr(0, 60, "to start up.");
   } while (bigOled.nextPage());
   
   gsmSerial.begin(115200, SERIAL_8N1, GSM_RX_PIN, GSM_TX_PIN, false); // 38400 Initialize gsmSerial with appropriate RX/TX pins
  
-  vTaskDelay(3000 / portTICK_PERIOD_MS);// Give some time for the serial communication to establish
+  vTaskDelay(1000 / portTICK_PERIOD_MS);// Give some time for the serial communication to establish
   gsmSerial.println("AT");
   vTaskDelay(100 / portTICK_PERIOD_MS); 
   gsmSerial.println("AT+IPR=115200");
@@ -767,15 +830,13 @@ void setup() {
   gsmSerial.println("AT&W");
   vTaskDelay(100 / portTICK_PERIOD_MS);
   //gsmSerial.println("AT&V"); //Show saved GSM settings
-  //vTaskDelay(100 / portTICK_PERIOD_MS);
-  // Initialize NVS
-  nvs_flash_init();
+  nvs_flash_init();  
+  stateBigOled = 1; 
   getTime();
-  savedTimestamp = getSavedTimestamp();
-  
+  savedTimestamp = getSavedTimestamp();  
   vTaskDelay(100 / portTICK_PERIOD_MS);
-  /*        Save obtained time   */
   gsmSerial.println("AT"); // Optional: Send an initial AT command to check if the GSM module is responsive
+  vTaskDelay(10 / portTICK_PERIOD_MS);
   initialize_gsm();
   vTaskDelay(100 / portTICK_PERIOD_MS);
   mq7_init(MQ7);
@@ -788,22 +849,31 @@ void setup() {
   vTaskDelay(100 / portTICK_PERIOD_MS);
   ph.begin();
 
-   //Bluetooth
+
+//Conductivity sensor
+  EEPROM.begin(32);//needed EEPROM.begin to store calibration k in eeprom
+	ec.begin();//by default lib store calibration k since 10 change it by set ec.begin(30); to start from 30
+
+
+//Bluetooth
   SerialBT.begin("ESP32_BT"); 
   if (!SerialBT.connected()) {
     Serial.println("Failed to connect to remote device. Make sure Bluetooth is turned on!");
   }
   vTaskDelay(100 / portTICK_PERIOD_MS);
 
-  /* Flow sensor */
+/* Flow sensor */
   pinMode(flowSensorPin, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(flowSensorPin), pulseCounter, FALLING);
-  
-  /* for switching screens  */
+  pinMode(flowSensor2Pin, INPUT_PULLUP);
+  //attachInterrupt(digitalPinToInterrupt(flowSensorPin), pulseCounter, FALLING);
+  attachInterrupt(digitalPinToInterrupt(flowSensor2Pin), pulseCounter2, FALLING); 
+/* for switching screens  */
   pinMode(buttonbigOled, INPUT_PULLUP); // Set button pin as input with pull-up resistor
-  attachInterrupt(digitalPinToInterrupt(buttonbigOled), buttonInterrupt, FALLING); // Attach interrupt to the button pin
+  attachInterrupt(digitalPinToInterrupt(buttonbigOled), buttonInterrupt_bigOled, FALLING); // Attach interrupt to the button pin
   pinMode(buttonsmallOled, INPUT_PULLUP); // Set button pin as input with pull-up resistor
-  attachInterrupt(digitalPinToInterrupt(buttonsmallOled), buttonInterrupt2, FALLING); // Attach interrupt to the button pin
+  attachInterrupt(digitalPinToInterrupt(buttonsmallOled), buttonInterrupt_smallOled, FALLING); // Attach interrupt to the button pin
+  pinMode(CurrentPin, INPUT);
+  interrupts();
   vTaskDelay(100 / portTICK_PERIOD_MS); 
 
   measurementQueue = xQueueCreate(queueLength, sizeof(Measurement));
@@ -818,23 +888,26 @@ void setup() {
   vTaskDelay(100 / portTICK_PERIOD_MS); 
   esp_err_t esp_wifi_stop(); 
 
+  analogReadResolution(12); 
+
   xTaskCreatePinnedToCore(Measuring,              "Measuring",      8192,               NULL,   1,     &Task1,  1); // 4096
-  vTaskDelay(1000 / portTICK_PERIOD_MS);//pcName,  usStackDepth, pvParameters, uxPriority,   pvCreatedTask,  xCoreID 
+  vTaskDelay(100 / portTICK_PERIOD_MS);//pcName,  usStackDepth, pvParameters, uxPriority,   pvCreatedTask,  xCoreID 
   xTaskCreatePinnedToCore(sendArray,              "Send Array",     8192,               NULL,   1,     &Task2,  0); // 20000 10000
-  vTaskDelay(1000 / portTICK_PERIOD_MS); 
+  vTaskDelay(100 / portTICK_PERIOD_MS); 
   xTaskCreatePinnedToCore(DisplayMeasurements,   "Display Measurements",      4096,      NULL,   0,     &Task3,  0); // Core: 1
   xTaskCreatePinnedToCore(BluetoothListen,       "Listen to Bluetooth",       4096,      NULL,   0,     &Task4,  0); // Core: 1
-  //xTaskCreatePinnedToCore(post,   "Post HTTP",      4096,      NULL,   1,     &Task1,  0); // Core: 1
+  vTaskDelay(100 / portTICK_PERIOD_MS); 
+//xTaskCreatePinnedToCore(post,   "Post HTTP",      4096,      NULL,   1,     &Task1,  0); // Core: 1
   //vTaskDelay(1000 / portTICK_PERIOD_MS);//pcName,  usStackDepth, pvParameters, uxPriority,   pvCreatedTask,  xCoreID 
 }
 
 void loop() {  
-  if (buttonPressed) {
+  if (buttonBigPressed) {
     // Toggle stateBigOled from 1 to 4
     stateBigOled = (stateBigOled % 4) + 1;
     Serial.print("stateBigOled: ");
     Serial.println(stateBigOled);
-    buttonPressed = false; // Reset button press flag
+    buttonBigPressed = false; // Reset button press flag
   } 
   if (buttonSmallPressed) {
     // Toggle state from 1 to 4
@@ -864,10 +937,6 @@ void loop() {
             Serial.println("Running generateJson()");
            generateJson();        
         } 
-        else if (inputString.startsWith("4")) { 
-            Serial.println("Running post2()");
-           post2();        
-        }
         //readGsmResponse();
     }  
     vTaskDelay(100 / portTICK_PERIOD_MS); // Small delay to avoid overwhelming the loop    

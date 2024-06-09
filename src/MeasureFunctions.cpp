@@ -1,5 +1,4 @@
 #include "config.h"
-
 /*      DS18B20 sensor            */
 OneWire oneWire(DS18B20_PIN);         // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 DallasTemperature sensors(&oneWire);  // Pass our oneWire reference to Dallas Temperature. 
@@ -67,43 +66,36 @@ void AllDS18B20Sensors(Measurement& measurement) {
 
 /*              Setup Flowsensor    */
 long currentMillis_flowsensor, previousMillis_flowsensor = 0;
-int interval = 50; //50 is de flicker extreem
-float calibrationFactor = 21.0;
-volatile unsigned long pulseCount;
-unsigned long pulse1Sec = 0;
-float flowRate, flowSensorValue = 0.0;
-unsigned int flowMilliLitres;
-
+volatile unsigned long pulseCount_flowsensor;
+unsigned long lastTime_flowsensor = 0;
+float frequency = 0.00;
 
 void IRAM_ATTR pulseCounter()
 {
-  pulseCount++;
+  pulseCount_flowsensor++;
 }
+
+unsigned long measurement_time = 500000; 
 
 float readFlowsensor(){
-  currentMillis_flowsensor = millis();
-  if (currentMillis_flowsensor - previousMillis_flowsensor > interval) {
-    Serial.print("pulseCount: "+ String(pulseCount));
-    pulse1Sec = pulseCount;
-    pulseCount = 0;
-    flowRate = ((1000.0 / interval) * pulse1Sec) / calibrationFactor;
-    previousMillis_flowsensor += interval;
-  
-    flowMilliLitres = (flowRate / 60) * 1000;
+unsigned long keepinside_time = 500000;
+  while(keepinside_time >= 500000)
+  {
+  unsigned long currentTime_flowsensor = micros();
+  unsigned long elapsedTime_flowsensor = currentTime_flowsensor - lastTime_flowsensor;
 
-    Serial.print("Flow rate: ");
-    Serial.print(flowRate, 3);  
-    Serial.print("L/min");
-    Serial.print("\t"); 
-
-    //Serial.print("Flow rate ml/min: ");
-    //Serial.print(flowMilliLitres, 3);  
-    //Serial.print("mL/min");
-    //Serial.print("\t");    
-    //Serial.println("");
+  if (elapsedTime_flowsensor >= measurement_time) { // One second elapsed
+    frequency = pulseCount_flowsensor / (elapsedTime_flowsensor / measurement_time); // Calculate frequency in Hz
+    pulseCount_flowsensor = 0;
+    lastTime_flowsensor = currentTime_flowsensor;
   }
-    return flowRate;
-}
+  keepinside_time--;
+  }
+  Serial.println("frequency: " + String(frequency) + " flowRate: " + String(frequency/21.0));
+  return frequency;
+  //flowRate = frequency/21.0;
+  //return flowRate;
+} 
 
 float readFlowSensorTemperature(int FlowSensorTempPin) {
   // Read the voltage at the ADC pin
@@ -132,9 +124,46 @@ float readFlowSensorTDS(int FlowSensorTDSPin, float voltageMultiplier, float vol
 
   return tdsValue;
 }
+
+/*              Setup 2nd Flowsensor    */
+long currentMillis_flowsensor2, previousMillis_flowsensor2 = 0;
+volatile unsigned long pulseCount_flowsensor2 = 0;
+unsigned long lastTime_flowsensor2 = 0;
+float frequency2 = 0.0;
+
+void IRAM_ATTR pulseCounter2()
+{
+    pulseCount_flowsensor2++;
+}
+
+unsigned long measurement_time2 = 500000; // 500 milliseconds in microseconds
+
+float readFlowsensor2(){
+    unsigned long startTime = micros();
+    unsigned long currentTime_flowsensor2;
+    unsigned long elapsedTime_flowsensor2;
+
+    // Wait for the measurement period to elapse
+    while (true) {
+        currentTime_flowsensor2 = micros();
+        elapsedTime_flowsensor2 = currentTime_flowsensor2 - startTime;
+        if (elapsedTime_flowsensor2 >= measurement_time2) {
+            break;
+        }
+    }
+
+    // Calculate frequency in Hz
+    frequency2 = pulseCount_flowsensor2 / (elapsedTime_flowsensor2 / 500000.0); // Convert elapsed time to seconds
+    pulseCount_flowsensor2 = 0; // Reset pulse count for next measurement
+    lastTime_flowsensor2 = currentTime_flowsensor2; // Update last time
+
+    Serial.println("frequency2: " + String(frequency2));
+
+    return frequency2;
+}
 /*      Switching screens           */
-//extern volatile int stateBigOled, stateOled; //  state 1 = GSM screen, state 2 = Oled screen
-volatile bool buttonPressed, buttonSmallPressed = false;
+extern volatile int stateBigOled, stateOled; //  state 1 = GSM screen, state 2 = Oled screen
+volatile bool buttonBigPressed, buttonSmallPressed = false;
 
 /*      MQ-7 MQ-8 sensor            */
 float RatioMQ7CleanAir = 27.5;
@@ -214,39 +243,31 @@ U8G2_SSD1306_128X64_NONAME_1_HW_I2C smallOled(U8G2_R0, /* reset=*/ U8X8_PIN_NONE
 
 //U8G2_SH1106_128X64_NONAME_1_HW_I2C
 //For GSMSerial output on OLED
-#define U8LOG_WIDTH 20 //25
+#define U8LOG_WIDTH 15 //25
 #define U8LOG_HEIGHT 6 //8+
 uint8_t u8log_buffer[U8LOG_WIDTH*U8LOG_HEIGHT];
 U8G2LOG u8g2log;
 
 void init_displays(){  
-  smallOled.setI2CAddress(0x3D * 2);
-  bigOled.setI2CAddress(0x3C * 2);
-  Wire.setClock(100000); //400000
+  smallOled.setI2CAddress(0x3D * 2);  smallOled.setBusClock(400000); 
+  bigOled.setI2CAddress(0x3C * 2);  bigOled.setBusClock(400000); 
 
-  smallOled.begin(); //0x78 (0x3D)
+  Wire.setClock(100000); 
+
+  smallOled.begin();
   bigOled.begin();  
   bigOled.clearBuffer();
-  //was u8g2_font_ncenB08_tr 8x16 pixels 
-  bigOled.setFont(u8g2_font_6x12_mf );	// set the font for the terminal window
+  bigOled.setFont(u8g2_font_6x12_mf);	// set the font for the terminal window
+  bigOled.setDisplayRotation(U8G2_R1);
   u8g2log.begin(bigOled, U8LOG_WIDTH, U8LOG_HEIGHT, u8log_buffer);
   u8g2log.setLineHeightOffset(2);	// set extra space between lines in pixel, this can be negative
   u8g2log.setRedrawMode(1);		// 0: Update screen with newline, 1: Update screen for every char 
   Serial.println("Displays initialized!");    
-  //bigOled.firstPage();
-  //do {
-  //  bigOled.setFont(u8g2_font_5x7_tr); //u8g2_font_ncenB08_tr
-  //  bigOled.drawStr(0, 20, "Hello ");
-  //  bigOled.drawStr(0, 40, "World.");
-  //} while (bigOled.nextPage());  
-  //Serial.print("Big Display height: ");
-  //Serial.println(bigOled.getDisplayHeight());
-  //Serial.print("Display Width: ");
-  //Serial.println(bigOled.getDisplayHeight());
-  //Serial.print("Small Display height: ");
-  //Serial.println(bigOled.getDisplayHeight());
-  //Serial.print("Display Width: ");
-  //Serial.println(bigOled.getDisplayHeight());
+  
+  //Serial.println("Big Display height: " + bigOled.getDisplayHeight());
+  //Serial.println("Big Display Width: "  + bigOled.getDisplayHeight());
+  //Serial.println("Small Display height: " + bigOled.getDisplayHeight());
+  //Serial.println("Small Display Width: " + bigOled.getDisplayHeight()); 
 }
 
 void printSmallOled(String x){
@@ -286,7 +307,8 @@ AvgAcs=Samples/100.0;             //De gemiddeldes bij elkaar zetten
 //0.185v(185mV) is rise in output voltage when 1A current flows at input
 
 //AcsValueF = (2.5 - (AvgAcs * (3.3 / 1024.0)) )/0.185;
-int R1, R2 = 1000; //Voltage devider of the current sensor 
+float R1 = 6800.0;
+float R2 = 12000.0;
 AcsValueF = (((AvgAcs * (3.3 / 1024.0)) * (R1+R2)/R2) -2.5)/1000; //Formula for voltage divider is inverted to compensate for itself
 //Serial.println(AcsValueF);//Print the read current on Serial monitor
 return AcsValueF;
@@ -294,14 +316,27 @@ return AcsValueF;
 
 
 /*      Conductivity Sensor   */
-volatile float voltage,ecValue,temperature_ec = 25;  // variable for storing the potentiometer value
+DFRobot_ESP_EC ec;
+volatile float voltage_cond, temperature_cond = 25;  // variable for storing the potentiometer value
+extern int EC_PIN;
 float Cond(){
-  ecValue = 0;
-  voltage = analogRead(CondPin);
-  ecValue = 1000*voltage/RES2/ECREF;
-  ecValue = ecValue / (1.0+0.0185*(temperature_ec-25.0));  //temperature compensation
+  static unsigned long timepoint = millis();
+	if (millis() - timepoint > 1000U) //time interval: 1s
+	{
+		timepoint = millis();
+		voltage_cond = analogRead(EC_PIN)/4095.0*3300;
+		//Serial.println("voltage: " + String(voltage_cond, 4));
+		//temperature = readTemperature();  // read your temperature sensor to execute temperature compensation
+		//Serial.println("voltage_cond: " String(temperature_cond, 1));
+		//Serial.println("^C");
+
+		measurement.ecValue = ec.readEC(voltage_cond, temperature_cond); // convert voltage to EC with temperature compensation
+		//Serial.println("EC: " + String(measurement.ecValue, 4) + " ms/cm");
+	}
+	ec.calibration(voltage_cond, temperature_cond); // calibration process by Serail CMD
+
   //Serial.print(ecValue,2);  Serial.println("ms/cm");
-  return ecValue;
+  return measurement.ecValue;
 }
 
 /*      pH Sensor             */
@@ -314,15 +349,15 @@ float pH(){
         lastTime = currentTime;
         
         temperature_pH = readTemperature();  // Lees de temperatuur om temperatuurcompensatie uit te voeren
-        voltage = analogRead(CondPin) / 1024.0 * 5000;  // Lees de spanning
-        phValue = ph.readPH(voltage, temperature_pH);  // Converteer spanning naar pH met temperatuurcompensatie
+        voltage_pH = analogRead(PH_PIN) / 1024.0 * 5000;  // Lees de spanning
+        phValue = ph.readPH(voltage_pH, temperature_pH);  // Converteer spanning naar pH met temperatuurcompensatie
         
         //Serial.print("Temperature: ");
         //Serial.println(temperature_pH, 1);
         //Serial.print("°C  pH: ");
         //Serial.println(phValue, 2);
         
-        ph.calibration(voltage, temperature_pH);  // Kalibratieproces via Seriële CMD
+        ph.calibration(voltage_pH, temperature_pH);  // Kalibratieproces via Seriële CMD
     }
   return phValue;
 }
@@ -616,8 +651,6 @@ void sendFileOverBluetoothInOneGo(const char* path) {
 
 
 
-
-
 void sendFileOverBluetoothInOneGo2(const char* path) {
     File file = SD.open(path, FILE_READ);
     if (!file) {
@@ -644,9 +677,9 @@ void sendFileOverBluetoothInOneGo2(const char* path) {
 }
 
 
-void buttonInterrupt() {
-  buttonPressed = true; // Set button press flag
+void buttonInterrupt_bigOled() {
+  buttonBigPressed = true; // Set button press flag
 }
-void buttonInterrupt2() {
+void buttonInterrupt_smallOled() {
   buttonSmallPressed = true; // Set button press flag
 }

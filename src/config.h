@@ -14,6 +14,13 @@
 #include <time.h>
 #include <nvs_flash.h>
 #include <nvs.h>
+#include "esp_attr.h"
+#include "DFRobot_ESP_EC.h"
+
+void BluetoothListen(void *parameter);
+void DisplayMeasurements(void *parameter);
+void Measuring(void *parameter);
+void sendArray(void *parameter);
 
 struct Measurement {
   float phValue;
@@ -91,12 +98,15 @@ extern const int flowSensorPin;
 extern long currentMillis_flowsensor, previousMillis_flowsensor;
 extern int interval; //50 is de flicker extreem
 extern float calibrationFactor;
+extern const float flowSensorCalibration;
 extern volatile unsigned long pulseCount;
 extern unsigned long pulse1Sec;
-extern float flowRate, flowSensorValue;
+extern float frequency, flowRate, flowSensorValue;
 extern unsigned int flowMilliLitres;
 float readFlowsensor();
+float readFlowsensor2();
 void IRAM_ATTR pulseCounter();
+void IRAM_ATTR pulseCounter2();
 float readFlowSensorTemperature(int FlowSensorTempPin);
 
 /*      Bluetooth          */
@@ -124,8 +134,8 @@ void sendFileOverBluetoothInOneGo(const char* path);
 
 /*      Configuration     */
 extern int buttonbigOled, buttonsmallOled;
-void buttonInterrupt();
-void buttonInterrupt2();
+void buttonInterrupt_bigOled();
+void buttonInterrupt_smallOled();
 
 /*      Ph Sensor         */
 extern DFRobot_PH ph;
@@ -134,13 +144,19 @@ float pH();
 float readTemperature();
 
 /*      Conductivity Sensor   */
-#define RES2 820.0
-#define ECREF 200.0
-extern int CondPin; // Potentiometer is connected to GPIO 34 (Analog ADC1_CH6) 
+extern DFRobot_ESP_EC ec;
+//extern float voltage_cond, temperature_cond;
+extern int EC_PIN; // Potentiometer is connected to GPIO 34 (Analog ADC1_CH6) 
 float Cond();
 
 /*      Current Sensor   */
 extern int CurrentPin;
 float CurrentSensor_quick();
+
+/*      EC library (Conductivity sensor)        */
+extern DFRobot_ESP_EC ec;
+//extern float voltage_cond, temperature_cond;
+extern int EC_PIN; // Potentiometer is connected to GPIO 34 (Analog ADC1_CH6) 
+float Cond();
 
 #endif // CONFIG_H
