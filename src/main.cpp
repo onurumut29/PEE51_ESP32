@@ -1,7 +1,4 @@
-#include <Arduino.h>
 #include "config.h"
-/*      Save Time     */
-Preferences rtcPrefs;
 
 /*      GSM Module Setup     */
 HardwareSerial gsmSerial(2); // Use UART2
@@ -76,7 +73,7 @@ DFRobot_PH ph;
 int PH_PIN = 34; 
 
 /*          Test for Array of JSON Objects         */
-String payload = "";
+//String payload = "";
 bool sendhttp = false;
 // Define the queue handle
 QueueHandle_t measurementQueue; // Define the queue handle
@@ -105,9 +102,7 @@ const int bufferSize = 8192; //10240
 #define BUFFER_SIZE 1 //10
 Measurement buffer[BUFFER_SIZE][MaxMeasurements];
 int bufferI = 0;
-
 char json[bufferSize];
-
 
 int GSM_RX_PIN2, GSM_TX_PIN2, GSM_RST_PIN2, Pin_MQ72, Pin_MQ82, DHT_SENSOR_PIN2, DS18B20_PIN2, flowSensorPin2, flowSensor2Pin2;
 
@@ -146,16 +141,6 @@ void sendArray(void *parameter)
   }
 }
 
-const int chunkSize = 256;
-
-void printBufferInChunks(const char* buffer, int bufferSize) {
-    for (int i = 0; i < bufferSize; i += chunkSize) {
-        int chunkLength = min(chunkSize, bufferSize - i);
-        Serial.write(buffer + i, chunkLength);
-        Serial.println(); // Add a newline after each chunk
-    }
-}
-
 void Measuring(void *parameter) {
   Serial.println("Inside Measuring task.");
   int MaxMeasurements = std::max({temperatureAmount, phValueAmount, humidityAmount, ecValueAmount, flowRateAmount, flowRate2Amount, acsAmount, ds18b20Amount, voltAmount, h2Amount, coAmount});
@@ -169,105 +154,105 @@ void Measuring(void *parameter) {
     // Initialize durations to zero
     duration_temperature = duration_phValue = duration_humidity = duration_ecValue = duration_flowRate, duration_flowRate2 = duration_acsValueF = duration_ds18b20 = duration_h2, duration_co = duration_volt = 0;
 
-if ((currentMeasurementIndex % dht22_tempInterval == 0) && (temperatureCount < temperatureAmount)) {  
-    start_time = micros();
-    measurement[mesureIndex].temperature = dht_sensor.readTemperature();
-    if (isnan(measurement[mesureIndex].temperature) || isinf(measurement[mesureIndex].temperature)) measurement[mesureIndex].temperature = 0;
-    temperatureCount++;
-    end_time = micros();
-    duration_temperature = end_time - start_time;
-}
+  if ((currentMeasurementIndex % dht22_tempInterval == 0) && (temperatureCount < temperatureAmount)) {  
+      start_time = micros();
+      measurement[mesureIndex].temperature = dht_sensor.readTemperature();
+      if (isnan(measurement[mesureIndex].temperature) || isinf(measurement[mesureIndex].temperature)) measurement[mesureIndex].temperature = 0;
+      temperatureCount++;
+      end_time = micros();
+      duration_temperature = end_time - start_time;
+  }
 
-if ((currentMeasurementIndex % phValueInterval == 0) && (phValueCount < phValueAmount)) {
-    start_time = micros();
-    measurement[mesureIndex].phValue = pH();
-    if (isnan(measurement[mesureIndex].phValue) || isinf(measurement[mesureIndex].phValue)) measurement[mesureIndex].phValue = 0;
-    phValueCount++;
-    end_time = micros();
-    duration_phValue = end_time - start_time;
-}
+  if ((currentMeasurementIndex % phValueInterval == 0) && (phValueCount < phValueAmount)) {
+      start_time = micros();
+      measurement[mesureIndex].phValue = pH();
+      if (isnan(measurement[mesureIndex].phValue) || isinf(measurement[mesureIndex].phValue)) measurement[mesureIndex].phValue = 0;
+      phValueCount++;
+      end_time = micros();
+      duration_phValue = end_time - start_time;
+  }
 
-if ((currentMeasurementIndex % dht22_humInterval == 0) &&  (humidityCount < humidityAmount)) {
-    start_time = micros();
-    measurement[mesureIndex].humidity = dht_sensor.readHumidity();
-    if (isnan(measurement[mesureIndex].humidity) || isinf(measurement[mesureIndex].humidity)) measurement[mesureIndex].humidity = 0;
-    humidityCount++;
-    end_time = micros();
-    duration_humidity = end_time - start_time;
-}
+  if ((currentMeasurementIndex % dht22_humInterval == 0) &&  (humidityCount < humidityAmount)) {
+      start_time = micros();
+      measurement[mesureIndex].humidity = dht_sensor.readHumidity();
+      if (isnan(measurement[mesureIndex].humidity) || isinf(measurement[mesureIndex].humidity)) measurement[mesureIndex].humidity = 0;
+      humidityCount++;
+      end_time = micros();
+      duration_humidity = end_time - start_time;
+  }
 
-if ((currentMeasurementIndex % ecValueInterval == 0) && (ecValueCount < ecValueAmount)) {
-    start_time = micros();
-    measurement[mesureIndex].ecValue = Cond();
-    if (isnan(measurement[mesureIndex].ecValue) || isinf(measurement[mesureIndex].ecValue)) measurement[mesureIndex].ecValue = 0;
-    ecValueCount++;
-    end_time = micros();
-    duration_ecValue = end_time - start_time;
-}
+  if ((currentMeasurementIndex % ecValueInterval == 0) && (ecValueCount < ecValueAmount)) {
+      start_time = micros();
+      measurement[mesureIndex].ecValue = Cond();
+      if (isnan(measurement[mesureIndex].ecValue) || isinf(measurement[mesureIndex].ecValue)) measurement[mesureIndex].ecValue = 0;
+      ecValueCount++;
+      end_time = micros();
+      duration_ecValue = end_time - start_time;
+  }
 
-if ((currentMeasurementIndex % flowRateInterval == 0) && (flowRateCount < flowRateAmount)) {
-    start_time = micros();
-    measurement[mesureIndex].flowRate = flowRate;
-    if (isnan(measurement[mesureIndex].flowRate) || isinf(measurement[mesureIndex].flowRate)) measurement[mesureIndex].flowRate = 0;
-    flowRateCount++;
-    end_time = micros();
-    duration_flowRate = end_time - start_time;
-}
+  if ((currentMeasurementIndex % flowRateInterval == 0) && (flowRateCount < flowRateAmount)) {
+      start_time = micros();
+      measurement[mesureIndex].flowRate = flowRate;
+      if (isnan(measurement[mesureIndex].flowRate) || isinf(measurement[mesureIndex].flowRate)) measurement[mesureIndex].flowRate = 0;
+      flowRateCount++;
+      end_time = micros();
+      duration_flowRate = end_time - start_time;
+  }
 
-if ((currentMeasurementIndex % flowRate2Interval == 0) && (flowRate2Count < flowRate2Amount)) {
-    start_time = micros();
-    measurement[mesureIndex].flowRate2 = flowRate2;
-    if (isnan(measurement[mesureIndex].flowRate2) || isinf(measurement[mesureIndex].flowRate2)) measurement[mesureIndex].flowRate2 = 0;
-    flowRate2Count++;
-    end_time = micros();
-    duration_flowRate2 = end_time - start_time;
-}
+  if ((currentMeasurementIndex % flowRate2Interval == 0) && (flowRate2Count < flowRate2Amount)) {
+      start_time = micros();
+      measurement[mesureIndex].flowRate2 = flowRate2;
+      if (isnan(measurement[mesureIndex].flowRate2) || isinf(measurement[mesureIndex].flowRate2)) measurement[mesureIndex].flowRate2 = 0;
+      flowRate2Count++;
+      end_time = micros();
+      duration_flowRate2 = end_time - start_time;
+  }
 
-if ((currentMeasurementIndex % acsValueFInterval == 0) && (acsValueFCount < acsAmount)) {
-    start_time = micros();
-    measurement[mesureIndex].AcsValueF = CurrentSensor_quick();
-    if (isnan(measurement[mesureIndex].AcsValueF) || isinf(measurement[mesureIndex].AcsValueF)) measurement[mesureIndex].AcsValueF = 0;
-    acsValueFCount++;
-    end_time = micros();
-    duration_acsValueF = end_time - start_time;
-}
+  if ((currentMeasurementIndex % acsValueFInterval == 0) && (acsValueFCount < acsAmount)) {
+      start_time = micros();
+      measurement[mesureIndex].AcsValueF = CurrentSensor_quick();
+      if (isnan(measurement[mesureIndex].AcsValueF) || isinf(measurement[mesureIndex].AcsValueF)) measurement[mesureIndex].AcsValueF = 0;
+      acsValueFCount++;
+      end_time = micros();
+      duration_acsValueF = end_time - start_time;
+  }
 
-if ((currentMeasurementIndex % ds18b20Interval == 0) && (ds18b20Count < ds18b20Amount)) {
-    start_time = micros();
-    AllDS18B20Sensors(measurement[mesureIndex]);
-    ds18b20Count++;
-    end_time = micros();
-    duration_ds18b20 = end_time - start_time;
-}
+  if ((currentMeasurementIndex % ds18b20Interval == 0) && (ds18b20Count < ds18b20Amount)) {
+      start_time = micros();
+      AllDS18B20Sensors(measurement[mesureIndex]);
+      ds18b20Count++;
+      end_time = micros();
+      duration_ds18b20 = end_time - start_time;
+  }
 
-if ((currentMeasurementIndex % h2Interval == 0) && (h2Count < h2Amount)) {
-    start_time = micros();
-    MQ8.update();
-    measurement[mesureIndex].ppmH = MQ8.readSensor();
-    if (isnan(measurement[mesureIndex].ppmH) || isinf(measurement[mesureIndex].ppmH)) measurement[mesureIndex].ppmH = 0;
-    h2Count++;
-    end_time = micros();
-    duration_h2 = end_time - start_time;
-} 
+  if ((currentMeasurementIndex % h2Interval == 0) && (h2Count < h2Amount)) {
+      start_time = micros();
+      MQ8.update();
+      measurement[mesureIndex].ppmH = MQ8.readSensor();
+      if (isnan(measurement[mesureIndex].ppmH) || isinf(measurement[mesureIndex].ppmH)) measurement[mesureIndex].ppmH = 0;
+      h2Count++;
+      end_time = micros();
+      duration_h2 = end_time - start_time;
+  } 
 
-if ((currentMeasurementIndex % coInterval == 0) && (coCount < coAmount)) {
-    start_time = micros();
-    MQ7.update();
-    measurement[mesureIndex].ppmCO = MQ7.readSensor();
-    if (isnan(measurement[mesureIndex].ppmCO) || isinf(measurement[mesureIndex].ppmCO)) measurement[mesureIndex].ppmCO = 0;
-    coCount++;
-    end_time = micros();
-    duration_co = end_time - start_time;
-} 
+  if ((currentMeasurementIndex % coInterval == 0) && (coCount < coAmount)) {
+      start_time = micros();
+      MQ7.update();
+      measurement[mesureIndex].ppmCO = MQ7.readSensor();
+      if (isnan(measurement[mesureIndex].ppmCO) || isinf(measurement[mesureIndex].ppmCO)) measurement[mesureIndex].ppmCO = 0;
+      coCount++;
+      end_time = micros();
+      duration_co = end_time - start_time;
+  } 
 
-if ((currentMeasurementIndex % voltInterval == 0) && (voltCount < voltAmount)) {
-    start_time = micros();
-    measurement[mesureIndex].Volt = 27.22; // Placeholder for voltage
-    if (isnan(measurement[mesureIndex].Volt) || isinf(measurement[mesureIndex].Volt)) measurement[mesureIndex].Volt = 0;
-    voltCount++;
-    end_time = micros();
-    duration_volt = end_time - start_time;
-}
+  if ((currentMeasurementIndex % voltInterval == 0) && (voltCount < voltAmount)) {
+      start_time = micros();
+      measurement[mesureIndex].Volt = 27.22; // Placeholder for voltage
+      if (isnan(measurement[mesureIndex].Volt) || isinf(measurement[mesureIndex].Volt)) measurement[mesureIndex].Volt = 0;
+      voltCount++;
+      end_time = micros();
+      duration_volt = end_time - start_time;
+  }
   measurement[mesureIndex].ts = savedTimestamp * 1000 + micros();  
 
 /*
@@ -484,7 +469,7 @@ void DisplayMeasurements(void *parameter)
     float current_ACS = 0.01;
     String flowDis      = "Flow: " + String(flowRate) +  " L/min";                     
     //String flowDis      = "Flow: " + String(0.00) +  " L/min";              
-    String flowDis2      = "Flow2: " + String(flowRate2) +  " L/min";               
+    String flowDis2     = "Flow2: " + String(flowRate2) +  " L/min";               
     String tempDis      = "Temp: " + String(measurement[1].temperature) + " °C";
     String humidityDis  = "Hum_: " + String(measurement[1].humidity)    + " %";
     String coDis        = "CO__: " + String(measurement[1].ppmCO)       + " ppm";
