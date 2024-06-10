@@ -135,39 +135,6 @@ void parseDatetime() {
     Serial.println("time_gsm created in parseDatetime: " + time_gsm);
   }
 }
-/*
-void parseDatetime(String resp) {
-  int startIndex = resp.indexOf("+CIPGSMLOC: ");
-  if (startIndex == -1) {
-    Serial.println("Error: Invalid response trying once more...");
-    gsmSerial.println("AT+CIPGSMLOC=1,1");
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-    readGsmResponse();
-    resp = response;
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-
-    startIndex = resp.indexOf("+CIPGSMLOC: ");  // Re-check with the new response
-    if (startIndex == -1) {
-    Serial.println("Error: Invalid can't get date time. Just restart 'cus it doesn't work...");
-    return;
-    }
-  }
-
-  int endIndex = resp.indexOf("\r\n", startIndex);
-  String data = resp.substring(startIndex + 12, endIndex);
-
-  // Split the response string by commas
-  int firstComma = data.indexOf(',');
-  int secondComma = data.indexOf(',', firstComma + 1);
-  int thirdComma = data.indexOf(',', secondComma + 1);
-  int fourthComma = data.indexOf(',', thirdComma + 1);
-
-  latitude = data.substring(firstComma + 1, secondComma);
-  longitude = data.substring(secondComma + 1, thirdComma);
-  date = data.substring(thirdComma + 1, fourthComma);
-  time_gsm = data.substring(fourthComma + 1);
-  Serial.println("time_gsm created in parseDatetime: " + time_gsm);
-} */
 
 void getTime(){
     gsmSerial.println("AT+SAPBR=3,1,\"Contype\",\"GPRS\", \"IP\""); // Sets the mode to GPRS
@@ -225,37 +192,7 @@ void getTimeNow(){
     convertToUnixTimestamp(date, time_gsm);
     vTaskDelay(100 / portTICK_PERIOD_MS); 
 }
-/*
-time_t convertToUnixTimestamp(String date, String time) {
-  // Extract year, month, day from date
-  int year = date.substring(0, 4).toInt();
-  int month = date.substring(5, 7).toInt();
-  int day = date.substring(8, 10).toInt();
-  
-  // Extract hour, minute, second from time
-  int hour = time.substring(0, 2).toInt();
-  int minute = time.substring(3, 5).toInt();
-  int second = time.substring(6, 8).toInt();
-  
-  // Create a tm struct
-  struct tm t;
-  t.tm_year = year - 1900; // tm_year is years since 1900
-  t.tm_mon = month - 1;    // tm_mon is 0-11
-  t.tm_mday = day;
-  t.tm_hour = hour;
-  t.tm_min = minute;
-  t.tm_sec = second;
-  t.tm_isdst = -1;         // Not set by default
 
-  // Convert to time_t (UNIX timestamp)
-  time_t timestamp = mktime(&t);
-  Serial.println("Timestamp created in convertToUnixTimestamp: " + String(timestamp));
-  struct timeval tv = { timestamp, 0 };
-  settimeofday(&tv, NULL);
-
-  return timestamp;
-}
-*/
 #include <nvs_flash.h>
 #include <nvs.h>
 
@@ -279,6 +216,7 @@ uint64_t getSavedTimestamp() {
 }
 
 time_t convertToUnixTimestamp(String date, String time) {
+    uint64_t timestamp_ms = 0;
   // Extract year, month, day from date
   int year = date.substring(0, 4).toInt();
   int month = date.substring(5, 7).toInt();
@@ -312,19 +250,19 @@ time_t convertToUnixTimestamp(String date, String time) {
   Serial.println("Intermediate timestamp: " + String(timestamp));
 
   // Calculate the timestamp with milliseconds
-  measurement.timestamp_ms = timestamp * 1000LL; // + millisecond;
+  timestamp_ms = timestamp * 1000LL; // + millisecond;
 
   // Print the final timestamp with milliseconds
-  Serial.println("Final timestamp with milliseconds: " + String(measurement.timestamp_ms));
-  saveTimestamp(measurement.timestamp_ms);
-  return measurement.timestamp_ms; 
+  Serial.println("Final timestamp with milliseconds: " + String(timestamp_ms));
+  saveTimestamp(timestamp_ms);
+  return timestamp_ms; 
 }
-
-
 
 void post_http(String jsonPayload){
     /*          Post HTTP data                */
     Serial.println("Post http data...");
+    gsmSerial.println("AT+HTTPINIT=?");       //Initialize HTTP service
+    readGsmResponse();
     gsmSerial.println("AT+HTTPINIT");       //Initialize HTTP service
     readGsmResponse();
     vTaskDelay(10 / portTICK_PERIOD_MS);    

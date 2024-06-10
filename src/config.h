@@ -16,17 +16,43 @@
 #include <nvs.h>
 #include "esp_attr.h"
 #include "DFRobot_ESP_EC.h"
+#include "soc/pcnt_struct.h"
+#include <stdio.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
+#include "freertos/task.h"
+#include "driver/pcnt.h"
+#include "esp_log.h"
+#include <Preferences.h>
+#include <EEPROM.h>
 
 void BluetoothListen(void *parameter);
 void DisplayMeasurements(void *parameter);
 void Measuring(void *parameter);
 void sendArray(void *parameter);
 
+extern int coAmount, h2Amount, flowRateAmount , flowRate2Amount , temperatureAmount , phValueAmount , ecValueAmount , humidityAmount , ds18b20Amount, voltAmount, acsAmount;
+const int MaxMeasurements = 500;
+//#define MaxMeasurements 500
+
+const int dht22_tempInterval  = MaxMeasurements / temperatureAmount; //40
+const int phValueInterval     = MaxMeasurements / phValueAmount;
+const int dht22_humInterval   = MaxMeasurements / humidityAmount;
+const int ecValueInterval     = MaxMeasurements / ecValueAmount;
+const int flowRateInterval    = MaxMeasurements / flowRateAmount;
+const int flowRate2Interval   = MaxMeasurements / flowRate2Amount;
+const int acsValueFInterval   = MaxMeasurements / acsAmount;
+const int ds18b20Interval     = MaxMeasurements / ds18b20Amount; //4
+const int voltInterval        = MaxMeasurements / voltAmount; //1
+const int h2Interval          = MaxMeasurements / h2Amount;
+const int coInterval          = MaxMeasurements / coAmount;
+
 struct Measurement {
   float phValue;
   float ecValue;
   float AcsValueF;
   float flowRate;
+  float flowRate2;
   float Volt;
   float DS18B20_1;
   float DS18B20_2;
@@ -42,11 +68,12 @@ struct Measurement {
   uint64_t ts;
   int milliseconds; 
 }; 
-extern Measurement measurement;
+extern Measurement measurement[MaxMeasurements];
 
 /*      Configuration     */
 extern bool sendhttp;
 extern String payload;
+void generateJson(Measurement buff);
 
 /*      Display      */
 extern U8G2_SSD1306_128X64_NONAME_1_HW_I2C smallOled;
@@ -87,27 +114,14 @@ void printSmallOled(String x);
 
 
 /*      DS18B20 sensor       */
-//extern struct Measurement measurement;
 extern const int DS18B20_PIN;
 void printDS18B20Address();
 void AllDS18B20Sensors(Measurement& measurement);
 //void AllDS18B20Sensors(Measurement& measurement);
 
 /*      Flow sensor       */
-extern const int flowSensorPin;
-extern long currentMillis_flowsensor, previousMillis_flowsensor;
-extern int interval; //50 is de flicker extreem
-extern float calibrationFactor;
-extern const float flowSensorCalibration;
-extern volatile unsigned long pulseCount;
-extern unsigned long pulse1Sec;
-extern float frequency, flowRate, flowSensorValue;
-extern unsigned int flowMilliLitres;
-float readFlowsensor();
-float readFlowsensor2();
-void IRAM_ATTR pulseCounter();
-void IRAM_ATTR pulseCounter2();
-float readFlowSensorTemperature(int FlowSensorTempPin);
+void pcnt_example_init(pcnt_unit_t unit, int pulse_gpio_num);
+extern float flowRate, flowRate2;
 
 /*      Bluetooth          */
 extern BluetoothSerial SerialBT;
@@ -142,12 +156,6 @@ extern DFRobot_PH ph;
 extern int PH_PIN;
 float pH();
 float readTemperature();
-
-/*      Conductivity Sensor   */
-extern DFRobot_ESP_EC ec;
-//extern float voltage_cond, temperature_cond;
-extern int EC_PIN; // Potentiometer is connected to GPIO 34 (Analog ADC1_CH6) 
-float Cond();
 
 /*      Current Sensor   */
 extern int CurrentPin;

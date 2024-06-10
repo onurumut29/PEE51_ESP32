@@ -64,38 +64,39 @@ void AllDS18B20Sensors(Measurement& measurement) {
   sensors.setResolution(9);
 }
 
+
 /*              Setup Flowsensor    */
-long currentMillis_flowsensor, previousMillis_flowsensor = 0;
-volatile unsigned long pulseCount_flowsensor;
-unsigned long lastTime_flowsensor = 0;
-float frequency = 0.00;
-
-void IRAM_ATTR pulseCounter()
+void pcnt_example_init(pcnt_unit_t unit, int pulse_gpio_num)
 {
-  pulseCount_flowsensor++;
+    /* Prepare configuration for the PCNT unit */
+    pcnt_config_t pcnt_config = {
+        // Set PCNT input signal GPIO
+        .pulse_gpio_num = pulse_gpio_num,
+        // No control GPIO needed
+        .ctrl_gpio_num = PCNT_PIN_NOT_USED,
+        // What to do on the positive / negative edge of pulse input?
+        .pos_mode = PCNT_COUNT_INC,   // Count up on the positive edge
+        .neg_mode = PCNT_COUNT_DIS,   // Ignore negative edge
+        // Set the maximum and minimum limit values to watch
+        .counter_h_lim = 0,
+        .counter_l_lim = 0,
+        .unit = unit,
+        .channel = PCNT_CHANNEL_0,
+    };
+    /* Initialize PCNT unit */
+    pcnt_unit_config(&pcnt_config);
+
+    /* Configure and enable the input filter */
+    pcnt_set_filter_value(unit, 100);
+    pcnt_filter_enable(unit);
+
+    /* Initialize PCNT's counter */
+    pcnt_counter_pause(unit);
+    pcnt_counter_clear(unit);
+
+    /* Everything is set up, now go to counting */
+    pcnt_counter_resume(unit);
 }
-
-unsigned long measurement_time = 500000; 
-
-float readFlowsensor(){
-unsigned long keepinside_time = 500000;
-  while(keepinside_time >= 500000)
-  {
-  unsigned long currentTime_flowsensor = micros();
-  unsigned long elapsedTime_flowsensor = currentTime_flowsensor - lastTime_flowsensor;
-
-  if (elapsedTime_flowsensor >= measurement_time) { // One second elapsed
-    frequency = pulseCount_flowsensor / (elapsedTime_flowsensor / measurement_time); // Calculate frequency in Hz
-    pulseCount_flowsensor = 0;
-    lastTime_flowsensor = currentTime_flowsensor;
-  }
-  keepinside_time--;
-  }
-  Serial.println("frequency: " + String(frequency) + " flowRate: " + String(frequency/21.0));
-  return frequency;
-  //flowRate = frequency/21.0;
-  //return flowRate;
-} 
 
 float readFlowSensorTemperature(int FlowSensorTempPin) {
   // Read the voltage at the ADC pin
@@ -110,60 +111,12 @@ float readFlowSensorTemperature(int FlowSensorTempPin) {
 
   return temperature;
 }
-//Read water quality
-float readFlowSensorTDS(int FlowSensorTDSPin, float voltageMultiplier, float voltageOffset, float tdsCalibrationFactor) {
-  // Read the voltage at the ADC pin
-  int adcValue = analogRead(FlowSensorTDSPin);
-  float voltage = adcValue * (3.3 / 4096.0);
 
-  // Apply voltage multiplier and offset
-  voltage = voltage * voltageMultiplier + voltageOffset;
 
-  // Calculate the TDS value
-  float tdsValue = voltage * tdsCalibrationFactor;
-
-  return tdsValue;
-}
-
-/*              Setup 2nd Flowsensor    */
-long currentMillis_flowsensor2, previousMillis_flowsensor2 = 0;
-volatile unsigned long pulseCount_flowsensor2 = 0;
-unsigned long lastTime_flowsensor2 = 0;
-float frequency2 = 0.0;
-
-void IRAM_ATTR pulseCounter2()
-{
-    pulseCount_flowsensor2++;
-}
-
-unsigned long measurement_time2 = 500000; // 500 milliseconds in microseconds
-
-float readFlowsensor2(){
-    unsigned long startTime = micros();
-    unsigned long currentTime_flowsensor2;
-    unsigned long elapsedTime_flowsensor2;
-
-    // Wait for the measurement period to elapse
-    while (true) {
-        currentTime_flowsensor2 = micros();
-        elapsedTime_flowsensor2 = currentTime_flowsensor2 - startTime;
-        if (elapsedTime_flowsensor2 >= measurement_time2) {
-            break;
-        }
-    }
-
-    // Calculate frequency in Hz
-    frequency2 = pulseCount_flowsensor2 / (elapsedTime_flowsensor2 / 500000.0); // Convert elapsed time to seconds
-    pulseCount_flowsensor2 = 0; // Reset pulse count for next measurement
-    lastTime_flowsensor2 = currentTime_flowsensor2; // Update last time
-
-    Serial.println("frequency2: " + String(frequency2));
-
-    return frequency2;
-}
 /*      Switching screens           */
 extern volatile int stateBigOled, stateOled; //  state 1 = GSM screen, state 2 = Oled screen
 volatile bool buttonBigPressed, buttonSmallPressed = false;
+
 
 /*      MQ-7 MQ-8 sensor            */
 float RatioMQ7CleanAir = 27.5;
@@ -243,7 +196,7 @@ U8G2_SSD1306_128X64_NONAME_1_HW_I2C smallOled(U8G2_R0, /* reset=*/ U8X8_PIN_NONE
 
 //U8G2_SH1106_128X64_NONAME_1_HW_I2C
 //For GSMSerial output on OLED
-#define U8LOG_WIDTH 15 //25
+#define U8LOG_WIDTH 12 //25
 #define U8LOG_HEIGHT 6 //8+
 uint8_t u8log_buffer[U8LOG_WIDTH*U8LOG_HEIGHT];
 U8G2LOG u8g2log;
@@ -319,6 +272,7 @@ return AcsValueF;
 DFRobot_ESP_EC ec;
 volatile float voltage_cond, temperature_cond = 25;  // variable for storing the potentiometer value
 extern int EC_PIN;
+volatile float ecValue;
 float Cond(){
   static unsigned long timepoint = millis();
 	if (millis() - timepoint > 1000U) //time interval: 1s
@@ -330,13 +284,12 @@ float Cond(){
 		//Serial.println("voltage_cond: " String(temperature_cond, 1));
 		//Serial.println("^C");
 
-		measurement.ecValue = ec.readEC(voltage_cond, temperature_cond); // convert voltage to EC with temperature compensation
-		//Serial.println("EC: " + String(measurement.ecValue, 4) + " ms/cm");
+		ecValue = ec.readEC(voltage_cond, temperature_cond); // convert voltage to EC with temperature compensation
 	}
 	ec.calibration(voltage_cond, temperature_cond); // calibration process by Serail CMD
 
   //Serial.print(ecValue,2);  Serial.println("ms/cm");
-  return measurement.ecValue;
+  return ecValue;
 }
 
 /*      pH Sensor             */
@@ -677,8 +630,14 @@ void sendFileOverBluetoothInOneGo2(const char* path) {
 }
 
 
+unsigned long button_time = 0;  
+unsigned long last_button_time = 0; 
 void buttonInterrupt_bigOled() {
-  buttonBigPressed = true; // Set button press flag
+  button_time = millis();
+  if(button_time - last_button_time > 500){
+    last_button_time = button_time;
+    buttonBigPressed = true; // Set button press flag        
+  }
 }
 void buttonInterrupt_smallOled() {
   buttonSmallPressed = true; // Set button press flag
