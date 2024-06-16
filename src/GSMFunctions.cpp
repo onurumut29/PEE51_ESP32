@@ -1,23 +1,7 @@
 #include "config.h"
 extern HardwareSerial gsmSerial;
-volatile int stateBigOled, stateOled = 1;
-String response ,longitude, latitude, date, time_gsm, jsonPayload = "";
-/*
-void readGsmResponse() {
-    char c;
-    response = "";
-    unsigned long startTime = millis();
-    while (millis() - startTime < 5000) { // Timeout after 5 seconds
-        while (gsmSerial.available() > 0) {
-            uint8_t byteFromSerial = gsmSerial.read();
-            c = char(byteFromSerial);
-            response += c;
-            Serial.write(byteFromSerial);
-            u8g2log.print(c); 
-            delay(5);
-        }
-    }
-} */
+volatile int stateBigOled = 1;
+String response, longitude, latitude, date, time_gsm, jsonPayload = "";
 
 void readGsmResponse() {
     char c;
@@ -172,6 +156,7 @@ void getTime(){
     readGsmResponse();
     vTaskDelay(100 / portTICK_PERIOD_MS);    
 }
+
 void getTimeNow(){
     Serial.println("Get time now().");
     vTaskDelay(100/portTICK_PERIOD_MS);
@@ -192,9 +177,6 @@ void getTimeNow(){
     convertToUnixTimestamp(date, time_gsm);
     vTaskDelay(100 / portTICK_PERIOD_MS); 
 }
-
-#include <nvs_flash.h>
-#include <nvs.h>
 
 void saveTimestamp(uint64_t timestamp_ms) {
     nvs_flash_init();

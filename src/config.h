@@ -4,7 +4,7 @@
 #include "MQUnifiedsensor.h"
 #include <HardwareSerial.h>
 #include <U8g2lib.h>
-#include <Wire.h>
+//#include <Wire.h>
 #include <DallasTemperature.h>
 #include <OneWire.h>
 #include "BluetoothSerial.h"
@@ -14,39 +14,24 @@
 #include <time.h>
 #include <nvs_flash.h>
 #include <nvs.h>
-#include "esp_attr.h"
+//#include "esp_attr.h"
 #include "DFRobot_ESP_EC.h"
-#include "soc/pcnt_struct.h"
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
 #include "freertos/task.h"
 #include "driver/pcnt.h"
-#include "esp_log.h"
-#include <Preferences.h>
+#include "freertos/ringbuf.h"
+#include "soc/lldesc.h"
 #include <EEPROM.h>
 
 void BluetoothListen(void *parameter);
 void DisplayMeasurements(void *parameter);
 void Measuring(void *parameter);
 void sendArray(void *parameter);
+void Counting(void *parameter);
 
-extern int coAmount, h2Amount, flowRateAmount , flowRate2Amount , temperatureAmount , phValueAmount , ecValueAmount , humidityAmount , ds18b20Amount, voltAmount, acsAmount;
-const int MaxMeasurements = 500;
-//#define MaxMeasurements 500
-
-const int dht22_tempInterval  = MaxMeasurements / temperatureAmount; //40
-const int phValueInterval     = MaxMeasurements / phValueAmount;
-const int dht22_humInterval   = MaxMeasurements / humidityAmount;
-const int ecValueInterval     = MaxMeasurements / ecValueAmount;
-const int flowRateInterval    = MaxMeasurements / flowRateAmount;
-const int flowRate2Interval   = MaxMeasurements / flowRate2Amount;
-const int acsValueFInterval   = MaxMeasurements / acsAmount;
-const int ds18b20Interval     = MaxMeasurements / ds18b20Amount; //4
-const int voltInterval        = MaxMeasurements / voltAmount; //1
-const int h2Interval          = MaxMeasurements / h2Amount;
-const int coInterval          = MaxMeasurements / coAmount;
-
+const int MaxMeasurements = 100;
 struct Measurement {
   float phValue;
   float ecValue;
@@ -63,21 +48,20 @@ struct Measurement {
   float humidity;
   float ppmH;
   float ppmCO;
-  time_t timestamp;
-  uint64_t timestamp_ms;
   uint64_t ts;
-  int milliseconds; 
 }; 
 extern Measurement measurement[MaxMeasurements];
+extern QueueHandle_t measurementQueue; // Define the queue handle
+void printCMD();
+void printCMDList(Measurement list);
 
 /*      Configuration     */
 extern bool sendhttp;
 extern String payload;
-void generateJson(Measurement buff);
 
 /*      Display      */
-extern U8G2_SSD1306_128X64_NONAME_1_HW_I2C smallOled;
-extern U8G2_SH1106_128X64_NONAME_1_HW_I2C bigOled;
+//U8G2_SSD1306_128X64_NONAME_1_HW_I2C 
+extern U8G2_SSD1306_128X64_NONAME_1_HW_I2C bigOled;
 
 /*      MQ-7 MQ-8 sensor       */
 void mq7_init(MQUnifiedsensor& MQ7);
@@ -85,12 +69,12 @@ void mq8_init(MQUnifiedsensor& MQ8);
 
 //For GSMSerial output on OLED
 extern U8G2LOG u8g2log;
-extern volatile int stateBigOled, stateOled;
+extern volatile int stateBigOled;
 
 /*      GSM Functions    */
 void saveTimestamp(uint64_t timestamp);
 uint64_t getSavedTimestamp();
-
+extern uint64_t savedTimestamp;
 void parseDatetime();
 //extern HardwareSerial gsmSerial;
 
@@ -108,12 +92,11 @@ void initialize_gsm2();
 
 
 /*      Display Setup     */
-void printBigOled(String x);
 void init_displays();
-void printSmallOled(String x);
 
 
 /*      DS18B20 sensor       */
+//extern struct Measurement measurement;
 extern const int DS18B20_PIN;
 void printDS18B20Address();
 void AllDS18B20Sensors(Measurement& measurement);
@@ -121,7 +104,7 @@ void AllDS18B20Sensors(Measurement& measurement);
 
 /*      Flow sensor       */
 void pcnt_example_init(pcnt_unit_t unit, int pulse_gpio_num);
-extern float flowRate, flowRate2;
+extern volatile float flowRate, flowRate2;
 
 /*      Bluetooth          */
 extern BluetoothSerial SerialBT;
@@ -157,14 +140,14 @@ extern int PH_PIN;
 float pH();
 float readTemperature();
 
-/*      Current Sensor   */
-extern int CurrentPin;
-float CurrentSensor_quick();
-
-/*      EC library (Conductivity sensor)        */
+/*      Conductivity Sensor   */
 extern DFRobot_ESP_EC ec;
 //extern float voltage_cond, temperature_cond;
 extern int EC_PIN; // Potentiometer is connected to GPIO 34 (Analog ADC1_CH6) 
 float Cond();
+
+/*      Current Sensor   */
+extern int CurrentPin;
+float CurrentSensor_quick();
 
 #endif // CONFIG_H

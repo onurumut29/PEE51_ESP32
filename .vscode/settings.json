@@ -1,3 +1,4 @@
 {
-    "CodeGPT.apiKey": "Ollama"
+    "CodeGPT.apiKey": "CodeGPT Plus Beta",
+    "idf.portWin": "COM3"
 }

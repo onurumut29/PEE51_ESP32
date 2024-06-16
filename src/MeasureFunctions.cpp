@@ -98,25 +98,6 @@ void pcnt_example_init(pcnt_unit_t unit, int pulse_gpio_num)
     pcnt_counter_resume(unit);
 }
 
-float readFlowSensorTemperature(int FlowSensorTempPin) {
-  // Read the voltage at the ADC pin
-  int adcValue = analogRead(FlowSensorTempPin);
-  float voltage = adcValue * (3.3 / 4096.0);
-
-  // Calculate the resistance of the NTC sensor
-  float resistance = (10000 * voltage) / (3.3 - voltage);
-
-  // Calculate the temperature in degrees Celsius
-  float temperature = 1 / (log(resistance / 10000) / 3950 + 1 / 298.15) - 273.15;
-
-  return temperature;
-}
-
-
-/*      Switching screens           */
-extern volatile int stateBigOled, stateOled; //  state 1 = GSM screen, state 2 = Oled screen
-volatile bool buttonBigPressed, buttonSmallPressed = false;
-
 
 /*      MQ-7 MQ-8 sensor            */
 float RatioMQ7CleanAir = 27.5;
@@ -167,21 +148,21 @@ void mq8_init(MQUnifiedsensor& MQ8)
     MQ8.setB(-0.688); // Configure the equation to to calculate H2 concentration
     MQ8.init();
     Serial.print("Calibrating MQ8 please wait.");
-    float calcR0_MQ8 = 0;
+    float calcR0 = 0;
     for (int i = 1; i <= 10; i++)
     {
         MQ8.update(); // Update data, the arduino will read the voltage from the analog pin
-        calcR0_MQ8 += MQ8.calibrate(RatioMQ8CleanAir);
+        calcR0 += MQ8.calibrate(RatioMQ8CleanAir);
         Serial.print(".");
     }
-    MQ8.setR0(calcR0_MQ8 / 10);
+    MQ8.setR0(calcR0 / 10);
     Serial.println("R0 for MQ8 calculation done!.");
 
-    if (isinf(calcR0_MQ8))
+    if (isinf(calcR0))
     {
         Serial.println("MQ8 Warning: Conection issue, R0 is infinite (Open circuit detected) please check your wiring and supply");
     }
-    if (calcR0_MQ8 == 0)
+    if (calcR0 == 0)
     {
         Serial.println("MQ8 Warning: Conection issue found, R0 is zero (Analog pin shorts to ground) please check your wiring and supply");
     }
@@ -191,8 +172,11 @@ void mq8_init(MQUnifiedsensor& MQ8)
 }
 
 /*      Display Setup               */
-U8G2_SH1106_128X64_NONAME_1_HW_I2C bigOled(U8G2_R0, /* reset=*/ U8X8_PIN_NONE, /* clock=*/ 22, /* data=*/ 21);
-U8G2_SSD1306_128X64_NONAME_1_HW_I2C smallOled(U8G2_R0, /* reset=*/ U8X8_PIN_NONE, /* clock=*/ 22, /* data=*/ 21);
+/*      Switching screens           */
+volatile bool buttonBigPressed, buttonSmallPressed = false;
+
+U8G2_SSD1306_128X64_NONAME_1_HW_I2C bigOled(U8G2_R0, /* reset=*/ U8X8_PIN_NONE, /* clock=*/ 22, /* data=*/ 21);
+//U8G2_SH1106_128X64_NONAME_1_HW_I2C bigOled(U8G2_R0, /* reset=*/ U8X8_PIN_NONE, /* clock=*/ 22, /* data=*/ 21);
 
 //U8G2_SH1106_128X64_NONAME_1_HW_I2C
 //For GSMSerial output on OLED
@@ -202,12 +186,10 @@ uint8_t u8log_buffer[U8LOG_WIDTH*U8LOG_HEIGHT];
 U8G2LOG u8g2log;
 
 void init_displays(){  
-  smallOled.setI2CAddress(0x3D * 2);  smallOled.setBusClock(400000); 
   bigOled.setI2CAddress(0x3C * 2);  bigOled.setBusClock(400000); 
 
-  Wire.setClock(100000); 
+  //Wire.setClock(100000); 
 
-  smallOled.begin();
   bigOled.begin();  
   bigOled.clearBuffer();
   bigOled.setFont(u8g2_font_6x12_mf);	// set the font for the terminal window
@@ -215,64 +197,53 @@ void init_displays(){
   u8g2log.begin(bigOled, U8LOG_WIDTH, U8LOG_HEIGHT, u8log_buffer);
   u8g2log.setLineHeightOffset(2);	// set extra space between lines in pixel, this can be negative
   u8g2log.setRedrawMode(1);		// 0: Update screen with newline, 1: Update screen for every char 
-  Serial.println("Displays initialized!");    
-  
-  //Serial.println("Big Display height: " + bigOled.getDisplayHeight());
-  //Serial.println("Big Display Width: "  + bigOled.getDisplayHeight());
-  //Serial.println("Small Display height: " + bigOled.getDisplayHeight());
-  //Serial.println("Small Display Width: " + bigOled.getDisplayHeight()); 
-}
-
-void printSmallOled(String x){
-   smallOled.firstPage();
-  do {
-    smallOled.setFont(u8g2_font_ncenB08_tr);
-    smallOled.drawStr(0, 20, "Flow: ");
-    smallOled.drawStr(0, 40, x.c_str());
-  } while (smallOled.nextPage()); 
-}
-
-void printBigOled(String x){
-  bigOled.firstPage();
-  do {
-    bigOled.setFont(u8g2_font_ncenB08_tr);
-    bigOled.drawStr(0, 20, "Flow: ");
-    bigOled.drawStr(0, 40, x.c_str());
-  } while (bigOled.nextPage()); 
+  Serial.println("Displays initialized!");      
+  //Serial.println("Big Display height: " + bigOled.getDisplayHeight() + " Big Display Width: "  + bigOled.getDisplayHeight());
 }
 
 /*              Setup Currentsensor    */
-//Prints current in mA
-float AcsValue, AvgAcs, AcsValueF, Samples =0.0;   //Sensor leesspanning | - | gem. leesspanning | Stroom
+float CurrentSensor_quick() {
+    float current_voltage, current = 0.0;
+    
+    float R1 = 1000.0;
+    float R2 = 2000.0;
 
-float CurrentSensor_quick(){
-  for (int x = 0; x < 100; x++){  //150 samples
-  AcsValue = analogRead(CurrentPin);      //uitlezen van de sensor   
-  Samples = Samples + AcsValue;   //samples bij elkaar zetten
-  vTaskDelay(1 / portTICK_PERIOD_MS);                     
+    const int numSamples = 100;
+    float adc_voltage_sum = 0.0;
+
+    // Read ADC value multiple times to average
+    for (int i = 0; i < numSamples; i++) {
+        int adc = analogRead(CurrentPin);
+        adc_voltage_sum += adc * (3.3 / 4095.0);
+        delay(1);  // Small delay to allow for better averaging
+    }
+
+    // Average the ADC voltage
+    float adc_voltage = adc_voltage_sum / numSamples;
+    //Serial.println("ADC voltage: " + String(adc_voltage));
+
+    // Calculate the sensor voltage
+    current_voltage = (adc_voltage *  R2) / (R1 + R2) ;
+    //Serial.println("Current voltage: " + String(current_voltage));
+
+    // Measure this value when no current is flowing to calibrate zeroCurrentVoltage
+    float zeroCurrentVoltage = 0.48;  // Use the previously measured value or measure again
+
+    // ACS712 sensitivity (e.g., 185mV/A for ACS712-05B)
+    float sensitivity = 0.066;  // Change this value based on your specific ACS712 model
+
+    // Calculate the current
+    current = (current_voltage - zeroCurrentVoltage) / sensitivity;
+    //Serial.println("Current: " + String(current));
+
+    return current;
 }
-AvgAcs=Samples/100.0;             //De gemiddeldes bij elkaar zetten
-
-//((AvgAcs * (5.0 / 1024.0)) is converitng the read voltage in 0-5 volts
-//2.5 is offset(I assumed that arduino is working on 5v so the viout at no current comes
-//out to be 2.5 which is out offset. If your arduino is working on different voltage than 
-//you must change the offset according to the input voltage)
-//0.185v(185mV) is rise in output voltage when 1A current flows at input
-
-//AcsValueF = (2.5 - (AvgAcs * (3.3 / 1024.0)) )/0.185;
-float R1 = 6800.0;
-float R2 = 12000.0;
-AcsValueF = (((AvgAcs * (3.3 / 1024.0)) * (R1+R2)/R2) -2.5)/1000; //Formula for voltage divider is inverted to compensate for itself
-//Serial.println(AcsValueF);//Print the read current on Serial monitor
-return AcsValueF;
-}
-
 
 /*      Conductivity Sensor   */
 DFRobot_ESP_EC ec;
 volatile float voltage_cond, temperature_cond = 25;  // variable for storing the potentiometer value
 extern int EC_PIN;
-volatile float ecValue;
+float ecValueFloat = 0;
 float Cond(){
   static unsigned long timepoint = millis();
 	if (millis() - timepoint > 1000U) //time interval: 1s
@@ -284,18 +255,19 @@ float Cond(){
 		//Serial.println("voltage_cond: " String(temperature_cond, 1));
 		//Serial.println("^C");
 
-		ecValue = ec.readEC(voltage_cond, temperature_cond); // convert voltage to EC with temperature compensation
+		ecValueFloat = ec.readEC(voltage_cond, temperature_cond); // convert voltage to EC with temperature compensation
+		//Serial.println("EC: " + String(measurement.ecValue, 4) + " ms/cm");
 	}
 	ec.calibration(voltage_cond, temperature_cond); // calibration process by Serail CMD
 
   //Serial.print(ecValue,2);  Serial.println("ms/cm");
-  return ecValue;
+  return ecValueFloat;
 }
 
 /*      pH Sensor             */
 float voltage_pH, phValue, temperature_pH = 25;
 float pH(){
-  static unsigned long lastTime = 0;
+    static unsigned long lastTime = 0;
     unsigned long currentTime = millis();
     
     if (currentTime - lastTime >= 1000) {  // tijdsinterval: 1s
@@ -314,7 +286,7 @@ float pH(){
     }
   return phValue;
 }
-
+ 
 float readTemperature() {
     // Voeg hier je code toe om de temperatuur van je temperatuursensor te krijgen
     // Bijvoorbeeld, als je een LM35 gebruikt:
@@ -322,7 +294,9 @@ float readTemperature() {
     // float millivolts = (rawValue / 1024.0) * 5000;
     // return millivolts / 10;
     // kan nog standaard waarde zoals 25 graden
-
+    
+    //Serial.println("Received 1st temperature: " + String(a));
+    //Serial.println("Received 2nd temperature: " + String(b));
     // Als placeholder, retourneer een constante waarde:
     return 25.0;
 }
@@ -601,9 +575,6 @@ void sendFileOverBluetoothInOneGo(const char* path) {
 
     Serial.println("File sent over Bluetooth: " + String(path));
 }
-
-
-
 void sendFileOverBluetoothInOneGo2(const char* path) {
     File file = SD.open(path, FILE_READ);
     if (!file) {
@@ -629,7 +600,6 @@ void sendFileOverBluetoothInOneGo2(const char* path) {
     Serial.println("File sent over Bluetooth");
 }
 
-
 unsigned long button_time = 0;  
 unsigned long last_button_time = 0; 
 void buttonInterrupt_bigOled() {
@@ -639,6 +609,7 @@ void buttonInterrupt_bigOled() {
     buttonBigPressed = true; // Set button press flag        
   }
 }
+
 void buttonInterrupt_smallOled() {
   buttonSmallPressed = true; // Set button press flag
 }
