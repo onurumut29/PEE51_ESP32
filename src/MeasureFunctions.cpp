@@ -1,67 +1,77 @@
 #include "config.h"
 /*      DS18B20 sensor            */
-OneWire oneWire(DS18B20_PIN);         // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
-DallasTemperature sensors(&oneWire);  // Pass our oneWire reference to Dallas Temperature. 
-int numberOfDevices;                  // Number of temperature devices found
-DeviceAddress tempDeviceAddress;      // We'll use this variable to store a found device address
-volatile float DS18B20_1, DS18B20_2,DS18B20_3, DS18B20_4, DS18B20_5 = 0.0; // Initialize to a default value
+#define sensorpin 33
+OneWire oneWire(sensorpin);
 
-//DS18B20 Find and print Address
-void printDS18B20Address() {
+// Pass our oneWire reference to Dallas Temperature. 
+DallasTemperature sensors(&oneWire);
+
+// Number of temperature devices found
+int numberOfDevices;
+
+// We'll use this variable to store a found device address
+DeviceAddress tempDeviceAddress; 
+
+void setup(){
+  // start serial port
+  Serial.begin(115200);
+  
+  // Start up the library
   sensors.begin();
-  numberOfDevices = sensors.getDeviceCount();  
+  
+  // Grab a count of devices on the wire
+  numberOfDevices = sensors.getDeviceCount();
+  
+  // locate devices on the bus
+  Serial.print("Locating devices...");
+  Serial.print("Found ");
+  Serial.print(numberOfDevices, DEC);
+  Serial.println(" devices.");
+
   // Loop through each device, print out address
-  for (int i = 0; i < numberOfDevices; i++) {
+  for(int i=0;i<numberOfDevices; i++){
     // Search the wire for address
-    if (sensors.getAddress(tempDeviceAddress, i)) {
+    if(sensors.getAddress(tempDeviceAddress, i)){
       Serial.print("Found device ");
       Serial.print(i, DEC);
-      Serial.print(" with address: ");      
-      // Print the address
-      for (uint8_t j = 0; j < 8; j++) {
-          if (tempDeviceAddress[j] < 16) Serial.print("0");
-          Serial.print(tempDeviceAddress[j], HEX);
-        }
-        Serial.println();
-      } else {
-        Serial.print("Found ghost device at ");
-        Serial.print(i, DEC);
-        Serial.print(" but could not detect address. Check power and cabling");
-        Serial.println();
-      }
+      Serial.print(" with address: ");
+      printAddress(tempDeviceAddress);
+      Serial.println();
+    } else {
+      Serial.print("Found ghost device at ");
+      Serial.print(i, DEC);
+      Serial.print(" but could not detect address. Check power and cabling");
     }
+  }
 }
-// Loop through each device, print out DS18B20 temperature data
-void AllDS18B20Sensors(Measurement& measurement) {
+
+void loop(){ 
   sensors.requestTemperatures(); // Send the command to get temperatures
-  int numberOfDevices = sensors.getDeviceCount();
-  for(int i = 0; i < numberOfDevices; i++) {
+  
+  // Loop through each device, print out temperature data
+  for(int i=0;i<numberOfDevices; i++){
     // Search the wire for address
-    if(sensors.getAddress(tempDeviceAddress, i)) {
-        // Print the data
-        float tempC = sensors.getTempC(tempDeviceAddress);
-        // Assign readings to variables Tempc1 and Tempc2
-        if(i == 0) {
-            measurement.DS18B20_1 = tempC;
-        } else if(i == 1) {
-            //DS18B20_2 = tempC;
-            measurement.DS18B20_2 = tempC;
-        }
-        else if(i == 2) {
-            //DS18B20_3 = tempC; 
-            measurement.DS18B20_3 = tempC; 
-        }
-        else if(i == 3) {
-            //DS18B20_4 = tempC;
-            measurement.DS18B20_4 = tempC;
-        }
-        else if(i == 4) {
-            //DS18B20_5 = tempC;
-            measurement.DS18B20_5 = tempC;
-        }
+    if(sensors.getAddress(tempDeviceAddress, i)){
+      // Uitgang sensor ID
+      Serial.print("Temperature for device: ");
+      Serial.println(i,DEC);
+      // Print the data
+      float tempC = sensors.getTempC(tempDeviceAddress);
+      Serial.print("Temp C: ");
+      Serial.print(tempC);
+      Serial.print(" Temp F: ");
+      Serial.println(DallasTemperature::toFahrenheit(tempC)); // Converts tempC to Fahrenheit
     }
-  }  
-  sensors.setResolution(9);
+  }
+  delay(1000);
+}
+
+// function to print a device address
+void printAddress(DeviceAddress deviceAddress) {
+  for (uint8_t i = 0; i < 8; i++){
+    if (deviceAddress[i] < 16) Serial.print("0");
+      Serial.print(deviceAddress[i], HEX);
+  }
 }
 
 
@@ -203,40 +213,46 @@ void init_displays(){
 
 /*              Setup Currentsensor    */
 float CurrentSensor_quick() {
-    float current_voltage, current = 0.0;
-    
-    float R1 = 1000.0;
-    float R2 = 2000.0;
+const float VREF = 3.3;           // Referentiespanning van de ESP32 
+const float SENSITIVITY = 0.066;  
+const int NUM_SAMPLES = 50;       //metingen voor nauwkeurigheid
 
-    const int numSamples = 100;
-    float adc_voltage_sum = 0.0;
+#define sensorPin 33         
+// Rustspanning kalibreren
+float offsetVoltage = 1.69;          // Rustspanning 
 
-    // Read ADC value multiple times to average
-    for (int i = 0; i < numSamples; i++) {
-        int adc = analogRead(CurrentPin);
-        adc_voltage_sum += adc * (3.3 / 4095.0);
-        delay(1);  // Small delay to allow for better averaging
-    }
+void setup() {
+  Serial.begin(115200); // Start seriële communicatie
+  
+  // Rustspanning meten en kalibreren
+  float totalOffset = 0;
+  for (int i = 0; i < NUM_SAMPLES; i++) {
+    totalOffset += analogRead(sensorPin);
+    delay(10); 
+  }
+  offsetVoltage = (totalOffset / NUM_SAMPLES) * VREF / 4095.0;
+}
 
-    // Average the ADC voltage
-    float adc_voltage = adc_voltage_sum / numSamples;
-    //Serial.println("ADC voltage: " + String(adc_voltage));
+void loop() {
+  float totalAdc = 0;
+  
+  for (int i = 0; i < NUM_SAMPLES; i++) {
+    totalAdc += analogRead(sensorPin);
+    delay(10); // Kleine vertraging tussen metingen
+  }
 
-    // Calculate the sensor voltage
-    current_voltage = (adc_voltage *  R2) / (R1 + R2) ;
-    //Serial.println("Current voltage: " + String(current_voltage));
-
-    // Measure this value when no current is flowing to calibrate zeroCurrentVoltage
-    float zeroCurrentVoltage = 0.48;  // Use the previously measured value or measure again
-
-    // ACS712 sensitivity (e.g., 185mV/A for ACS712-05B)
-    float sensitivity = 0.066;  // Change this value based on your specific ACS712 model
-
-    // Calculate the current
-    current = (current_voltage - zeroCurrentVoltage) / sensitivity;
-    //Serial.println("Current: " + String(current));
-
-    return current;
+  float averageAdc = totalAdc / NUM_SAMPLES;
+  float voltage = averageAdc * VREF / 4095.0;
+  float current = ((voltage - offsetVoltage) / SENSITIVITY)*1.48;
+  
+  Serial.print("ADC Value : ");
+  Serial.print(averageAdc);
+  Serial.print("\tCurrent : ");
+  Serial.print(current);
+  Serial.println(" A");
+  
+  delay(300); // Wachttijd tussen metingen
+}
 }
 
 /*      Conductivity Sensor   */
@@ -613,3 +629,90 @@ void buttonInterrupt_bigOled() {
 void buttonInterrupt_smallOled() {
   buttonSmallPressed = true; // Set button press flag
 }
+
+void spanningmeter() {
+ // Constants for voltage measurement
+const float vPow = 4.7;  // Externe referentiespanning
+const float r1 = 100000; // Weerstand R1 in de spanningsdeler
+const float r2 = 10000;  // Weerstand R2 in de spanningsdeler
+
+#define sensorPin 32      // Gebruik GPIO32 (A0) als analoge pin
+
+void setup() {
+  Serial.begin(9600); // Start seriële communicatie
+
+  Serial.println("--------------------");
+  Serial.println("DC VOLTMETER");
+  Serial.print("Maximum Voltage: ");
+  Serial.print(vPow * ((r1 + r2) / r2), 2); // Bereken de maximale meetbare spanning
+  Serial.println("V");
+  Serial.println("--------------------");
+  Serial.println("");
+   
+  delay(2000);
+}
+
+void loop() {
+  // Lees de analoge waarde van de pin (12-bit resolutie, dus 0-4095)
+  int adcWaarde = analogRead(sensorPin);
+  
+  // Bereken de spanning gebaseerd op de ADC-waarde en de referentiespanning
+  float v = (adcWaarde * vPow) / 4095.0; 
+  
+  // Gebruik de spanningsdeler formule
+  float v2 = v / (r2 / (r1 + r2));
+  
+  // Output de gemeten spanning naar de monitor
+  Serial.print("Gemeten Spanning: ");
+  Serial.print(v2, 2); // Print de spanning met 2 decimalen
+  Serial.println(" V");
+  
+  delay(1000); // Wachttijd tussen metingen
+}
+}
+void tempmeter() {
+#include "DHT.h"             // Bibliotheek voor DHT sensoren
+
+#define sensorpin 32            // data pin
+
+
+//Welke DHT chip 
+#define dhtType DHT22        // DHT 22
+
+
+DHT dht(sensorpin, dhtType);    // Initialiseer de DHT bibliotheek
+
+float tempC;              // temperatuur in graden Celcius
+
+void setup() 
+{
+  Serial.begin(9600);        // stel de seriële monitor in
+  dht.begin();               // start het DHT sensor uitlezen
+}
+
+void loop() {
+  
+  delay(1000);
+
+  tempC = dht.readTemperature();   //vraag temperatuur     
+
+  // Controleer of alle waarden goed zijn uitgelezen, zo niet probeer het opnieuw
+  if (isnan(tempC)) {
+    Serial.println("Uitlezen van DHT sensor mislukt!");
+    
+    return;
+  }
+  
+
+  // seriële monitor
+
+  Serial.print("Temperatuur: ");
+  Serial.print(tempC);
+  Serial.print(" °C ");
+
+
+//  
+  delay(2000);
+}
+}
+
